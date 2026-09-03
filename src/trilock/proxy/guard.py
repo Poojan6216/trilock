@@ -20,7 +20,7 @@ import json
 import os
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from weakref import WeakKeyDictionary
 
@@ -28,8 +28,11 @@ import mcp_types as types
 
 from trilock import log
 from trilock.config import TrilockConfig
-from trilock.policy.decision import ToolCall, TrifectaState
+from trilock.policy.decision import Decision, ToolCall, TrifectaState, Verdict
+from trilock.policy.engine import SessionSnapshot, decide
 from trilock.policy.model import Mode, Policy, ToolClass
+from trilock.policy.scope import ScopeResult
+from trilock.policy.scope import check as check_scope
 from trilock.policy.trifecta import SessionRegistry, SessionState, is_external
 from trilock.taint.labels import new_call_id
 from trilock.taint.propagate import Attribution
@@ -49,6 +52,7 @@ class CallContext:
     classification: ToolClass | None
     attribution: Attribution
     trifecta: TrifectaState
+    scope: ScopeResult = field(default_factory=ScopeResult)
 
     @property
     def unclassified(self) -> bool:
@@ -63,6 +67,7 @@ class CallContext:
             "effect": self.classification.effect.value if self.classification else None,
             "trifecta": self.trifecta.to_json(),
             "attribution": self.attribution.to_json(),
+            "scope": self.scope.to_json(),
         }
 
 
@@ -233,7 +238,50 @@ class Guard:
             classification=classification,
             attribution=attribution,
             trifecta=state.trifecta(external=is_external(classification)),
+            # Scope resolution touches the filesystem to follow symlinks, which
+            # is why it happens here and not inside `decide`: the engine sees
+            # only the boolean, and stays pure (Hard Rule 4).
+            scope=check_scope(classification, call.arguments, root=self.config.base_dir),
         )
+
+    def snapshot(self, ctx: CallContext) -> SessionSnapshot:
+        """Freeze everything the engine may know about this call."""
+        return SessionSnapshot(
+            trifecta=ctx.trifecta,
+            attribution=ctx.attribution,
+            classification=ctx.classification,
+            session_label=ctx.session.ledger.session_label(),
+            detector_scores=ctx.session.ledger.session_label().detector_scores,
+            scope_violation=ctx.scope.violated,
+            normalisation_removed=sum(r.removed_chars for r in ctx.session.normalisations),
+        )
+
+    def decide(self, ctx: CallContext) -> Decision:
+        """The verdict for this call. Returns ALLOW when there is no policy.
+
+        With no policy Trilock is a passthrough (Hard Rule 7), and with a
+        degraded session identity it cannot do session-level accounting at all,
+        so it says so and allows rather than enforcing on state it knows is
+        wrong. Both are logged; neither is silent.
+        """
+        if self.policy is None:
+            return Decision(
+                verdict=Verdict.ALLOW, rule_id="passthrough", reasons=("no policy is configured",)
+            )
+        if self.resolver.is_degraded(ctx.session.key):
+            _log.error(
+                "refusing to enforce on a degraded session identity",
+                extra={"session": str(ctx.session.key), "tool": ctx.call.tool},
+            )
+            return Decision(
+                verdict=Verdict.ALLOW,
+                rule_id="identity_degraded",
+                reasons=(
+                    "session identity could not be established, so trifecta accounting "
+                    "would be wrong; Trilock reports rather than enforcing on it",
+                ),
+            )
+        return decide(ctx.call, self.snapshot(ctx), self.policy)
 
     def ingest(self, ctx: CallContext, result: types.CallToolResult) -> types.CallToolResult:
         """Normalise, label and record a tool result; return what the agent sees."""
@@ -255,6 +303,6 @@ class Guard:
         # Hard Rule 5 does not license it.
         return replace_text(result, normalised[: len(texts)])
 
-    def observe(self, ctx: CallContext) -> None:
-        """Log the full provenance record for a call. Phase 1's whole output."""
-        _log.info("call observed", extra=ctx.to_json())
+    def observe(self, ctx: CallContext, decision: Decision) -> None:
+        """Log the full provenance record and the verdict for one call."""
+        _log.info("call decided", extra={**ctx.to_json(), "decision": decision.to_json()})

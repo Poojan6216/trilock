@@ -23,6 +23,7 @@ from mcp_types import INVALID_PARAMS
 
 from trilock import __version__, log
 from trilock.config import TrilockConfig
+from trilock.policy.decision import Decision
 from trilock.policy.model import load_policy
 from trilock.proxy.guard import Guard
 from trilock.proxy.pins import PinStore
@@ -59,6 +60,28 @@ def _error_result(message: str) -> types.CallToolResult:
     )
 
 
+def _refusal(decision: Decision) -> types.CallToolResult:
+    """The tool error returned for a blocked call.
+
+    Three things this must not be. Not a fabricated success — an agent told a
+    send succeeded will report to the user that it did. Not an echo of the
+    call's arguments — those may carry content an attacker wrote, and this text
+    goes straight back into the model's context. And not advice: no "you
+    should", no "try instead", nothing a hijacked model can read as the next
+    instruction. It names the rule and states the finding, so a *developer*
+    reading the transcript can act on it.
+    """
+    lines = [
+        f"Trilock refused this call. rule={decision.rule_id} verdict={decision.verdict.value}",
+        *(f"- {reason}" for reason in decision.reasons),
+    ]
+    if decision.tainted_args:
+        lines.append(
+            f"- arguments carrying untrusted provenance: {', '.join(decision.tainted_args)}"
+        )
+    return _error_result("\n".join(lines))
+
+
 def _progress_bridge(ctx: Ctx) -> Any:
     """Forward upstream progress to whoever asked for it downstream.
 
@@ -91,6 +114,17 @@ def build_server(router: Router, guard: Guard | None = None) -> Server[None]:
 
     async def on_call_tool(ctx: Ctx, params: types.CallToolRequestParams) -> types.CallToolResult:
         call_ctx = guard.prepare(ctx.session, params.name, params.arguments) if guard else None
+        if guard is not None and call_ctx is not None:
+            decision = guard.decide(call_ctx)
+            guard.observe(call_ctx, decision)
+            if decision.blocked:
+                # The upstream is never reached. Blocking after the fact would
+                # mean the side effect already happened.
+                _log.warning(
+                    "call refused",
+                    extra={"tool": params.name, "decision": decision.to_json()},
+                )
+                return _refusal(decision)
         try:
             result = await router.call_tool(
                 params.name,
@@ -103,7 +137,6 @@ def build_server(router: Router, guard: Guard | None = None) -> Server[None]:
             return _error_result(str(exc))
         if guard is not None and call_ctx is not None:
             result = guard.ingest(call_ctx, result)
-            guard.observe(call_ctx)
         return result
 
     async def on_list_prompts(

@@ -395,15 +395,15 @@ rules:
   `policy/engine.py::decide`. Pure. No I/O, no clock, no randomness (Hard Rule 4). Rule evaluation is ordered and first-match-wins, with `default_deny` as the terminal rule. Every `Decision` names the rule that produced it.
   **Verify:** hypothesis test asserts determinism — 5000 random `(call, session, policy)` triples each decided twice, always identical. Plus a golden-file suite of 40+ scenario → expected-decision pairs.
 
-- [ ] **2.4 — Three modes**
+- [x] **2.4 — Three modes**
   `strict` (session-level Rule of Two, ignores attribution, maximum security), `dataflow` (argument-level attribution, better utility), `monitor` (decide and log, never block — for onboarding onto an existing deployment).
   **Verify:** the same attack scenario yields DENY/ESCALATE in strict, DENY in dataflow, ALLOW+logged in monitor.
 
-- [ ] **2.5 — Enforcement in the proxy**
+- [x] **2.5 — Enforcement in the proxy**
   `DENY` returns an MCP tool error with the rule id and reasons — **never** a fabricated success, and never text that could itself be read as an instruction by the agent. `ESCALATE` is Phase 3. Blocked calls never touch the upstream server.
   **Verify:** integration test asserts the upstream fixture server records zero invocations for a denied call.
 
-- [ ] **2.6 — Scoped capabilities**
+- [x] **2.6 — Scoped capabilities**
   Path/host scoping for external actions: `fs.write` restricted to a glob, `http.post` to an allowlist of hosts, `email.send` to an allowlist of recipient domains. Deny by default outside scope. Normalise paths before matching (resolve `..`, symlinks, unicode-normalised path components) — a scope check that can be defeated by `../` is worse than no scope check.
   **Verify:** 20+ path traversal and host-confusion attempts (`evil.com#@allowed.com`, `allowed.com.evil.com`, IDN homoglyphs, `file://`, redirect chains) all denied.
 
@@ -610,6 +610,9 @@ rules:
 [2.1] Policy schema (written in 1.5, verified here): 21 malformed policies each producing a field-named actionable error, round-trip stability for all four shipped policies, exact-then-longest-glob classification with deterministic tie-break, and 'trilock check' printing the resolved tool table.
 [2.2] Trifecta accounting verified over all 6 orderings of three events and all 6 orderings of two, plus monotonicity (ingress legs never un-set), external evaluated per-call not per-session, and reset as the only way a leg clears.
 [2.3] decide() is pure: 5000-example hypothesis determinism, plus properties that every decision names a real rule, monitor never blocks, and decide never mutates its inputs. 46 hand-reasoned scenarios (expected verdict AND rule id written by hand, not blessed from a run) + a 45-entry golden file over the whole Decision. Simplified shipped policies from three overlapping allow rules to one. SessionSnapshot is frozen so the engine cannot reach the ledger or the content.
+[2.4] Three modes verified end to end on the same attack: dataflow DENY via tainted_egress, strict DENY via rule_of_two, monitor ALLOW with 'monitor:tainted_egress' recorded.
+[2.5] Enforcement: blocked calls return an MCP tool error naming the rule and never reach the upstream — verified against the fixture server's OWN invocation journal, not Trilock's account of itself. Refusal text asserted to be non-fabricating, non-echoing (no untrusted content, no recipient) and non-directive.
+[2.6] Scope checking in policy/scope.py (extra module; ~250 lines, too big for engine.py). 16 path escapes + 18 host confusions + 5 email spoofs all denied. FOUND A REAL BUG IN MY OWN CODE: I initially folded homoglyphs in hostnames, which made api.<cyrillic-a>llowed.com MATCH the allowlist — the same fold that is correct in normalize.py (show a human what text pretends to be) is catastrophic for identity. Hostnames now IDNA-encode to punycode and confusables are rejected outright. NUL-containing paths are now matched-and-rejected rather than skipped as unclassifiable, which was a bypass. Known limit documented: redirects are not followed.
 ```
 
 ---

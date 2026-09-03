@@ -92,7 +92,9 @@ ignore = [
 # The invisible-text corpus builder must contain the real control characters it
 # encodes; RUF001-003 exist to flag exactly those, which is the point here.
 "tests/fixtures/attacks/**" = ["RUF001", "RUF002", "RUF003"]
+# These suites assert on confusable characters, which is what RUF001-003 flag.
 "tests/unit/test_normalize.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/unit/test_scope.py" = ["RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["trilock"]

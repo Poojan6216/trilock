@@ -117,6 +117,16 @@ class TrilockConfig(_Strict):
     source_path: Path | None = None
     """Where this config was loaded from. Set by the loader, never by the file."""
 
+    @property
+    def base_dir(self) -> Path:
+        """Directory relative scope patterns resolve against.
+
+        The config file's own directory when there is one, so a policy that
+        says ``./workspace/**`` means the workspace beside the config rather
+        than beside whatever directory the agent happened to launch from.
+        """
+        return self.source_path.parent if self.source_path is not None else Path.cwd()
+
     @model_validator(mode="after")
     def _check_server_names(self) -> TrilockConfig:
         for name in self.servers:
