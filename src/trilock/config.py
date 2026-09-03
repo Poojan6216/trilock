@@ -97,6 +97,24 @@ class PinConfig(_Strict):
     """
 
 
+class SessionsConfig(_Strict):
+    """Session state that survives a client reconnect for the same user and config."""
+
+    durable: bool = False
+    """Opt-in: every new stdio session inherits the previous one's legs within `ttl_hours`."""
+    ttl_hours: float = Field(default=24.0, gt=0)
+    path: Path = Path(STATE_DIRNAME) / "sessions"
+
+
+class SinkConfig(_Strict):
+    """Taint that persists on what an agent writes and re-attaches when it is read back."""
+
+    enabled: bool = True
+    path: Path = Path(STATE_DIRNAME) / "sinks.json"
+    max_entries: int = Field(default=5000, gt=0)
+    ttl_hours: float = Field(default=168.0, gt=0)
+
+
 class LedgerConfig(_Strict):
     """Bounds on the per-session provenance ledger."""
 
@@ -116,6 +134,8 @@ class TrilockConfig(_Strict):
     detectors: DetectorConfig = Field(default_factory=DetectorConfig)
     ledger: LedgerConfig = Field(default_factory=LedgerConfig)
     pins: PinConfig = Field(default_factory=PinConfig)
+    sinks: SinkConfig = Field(default_factory=SinkConfig)
+    sessions: SessionsConfig = Field(default_factory=SessionsConfig)
     state_dir: Path = Path(STATE_DIRNAME)
     source_path: Path | None = None
     """Where this config was loaded from. Set by the loader, never by the file."""
@@ -203,5 +223,7 @@ def load_config(path: Path | None = None) -> TrilockConfig:
                 update={"model_dir": base / config.detectors.model_dir}
             ),
             "pins": config.pins.model_copy(update={"path": base / config.pins.path}),
+            "sinks": config.sinks.model_copy(update={"path": base / config.sinks.path}),
+            "sessions": config.sessions.model_copy(update={"path": base / config.sessions.path}),
         }
     )

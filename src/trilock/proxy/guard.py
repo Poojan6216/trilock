@@ -40,8 +40,10 @@ from trilock.policy.model import Mode, Policy, ToolClass
 from trilock.policy.scope import ScopeResult
 from trilock.policy.scope import check as check_scope
 from trilock.policy.trifecta import SessionRegistry, SessionState, is_external
-from trilock.taint.labels import new_call_id
+from trilock.taint import durable
+from trilock.taint.labels import IDENTITY, new_call_id
 from trilock.taint.propagate import Attribution, walk_arguments
+from trilock.taint.sinks import SinkStore
 from trilock.taint.store import LedgerStore, SessionKey
 
 _log = log.get("proxy.guard")
@@ -233,6 +235,22 @@ class Guard:
         )
         self.sessions = SessionRegistry(self.ledgers)
         self.approvals = ApprovalStore()
+        self.sinks: SinkStore | None = (
+            SinkStore(
+                config.sinks.path,
+                max_entries=config.sinks.max_entries,
+                ttl_s=config.sinks.ttl_hours * 3600,
+            )
+            if config.sinks.enabled
+            else None
+        )
+        self.durable: durable.DurableSessions | None = (
+            durable.DurableSessions(config.sessions.path, ttl_s=config.sessions.ttl_hours * 3600)
+            if config.sessions.durable
+            else None
+        )
+        self._durable_key = durable.durable_key(config.source_path)
+        self._restored: set[SessionKey] = set()
         self.detectors: list[Detector] = self._build_detectors()
         self.audit: AuditLog | None = AuditLog(config.audit.path) if config.audit.enabled else None
         self.policy_hash = policy_digest(policy)
@@ -293,6 +311,7 @@ class Guard:
     ) -> CallContext:
         """Assemble everything needed to decide about a call. Pure bookkeeping."""
         state = self.sessions.get(self.resolver.key_for(session_obj))
+        self._maybe_restore(state)
         state.calls += 1
         call = ToolCall(tool=name, arguments=dict(arguments or {}), call_id=new_call_id())
         classification = self.policy.classify(name) if self.policy is not None else None
@@ -429,9 +448,26 @@ class Guard:
         contents = [*texts, structured] if structured is not None else texts
         if not contents:
             return result
+        # Content read back from a sink the agent wrote earlier inherits that
+        # sink's taint - this session or another, before or after a restart.
+        inherited = self.sinks.lookup(ctx.call.arguments) if self.sinks is not None else None
         normalised, reports = ctx.session.record_result(
-            ctx.call.server, ctx.call.tool, ctx.call.call_id, contents, ctx.classification
+            ctx.call.server,
+            ctx.call.tool,
+            ctx.call.call_id,
+            contents,
+            ctx.classification,
+            inherited=inherited,
         )
+        if self.sinks is not None:
+            # The call was allowed and ran. If its arguments carried taint, what
+            # it wrote is tainted wherever it went.
+            written = ctx.attribution.label if ctx.attribution.matches else IDENTITY
+            if not ctx.attribution.complete:
+                written = written.join(ctx.session.ledger.evicted_floor)
+            if self.sinks.record(ctx.call.tool, ctx.call.arguments, written):
+                self.sinks.save()
+        self._maybe_persist(ctx.session)
         # Detectors see the *normalised* text, so a smuggled instruction is
         # scored as the readable sentence it is, plus how much had to be
         # stripped to make it readable.
@@ -476,3 +512,40 @@ class Guard:
             _log.error(
                 "audit write failed", extra={"error": str(exc), "path": str(self.audit.path)}
             )
+
+    # -- durable sessions ------------------------------------------------
+
+    def _maybe_restore(self, state: SessionState) -> None:
+        """Resume the previous process's session for this user+config, once, if durable."""
+        if self.durable is None or state.key in self._restored or state.key.kind != "stdio-process":
+            return
+        self._restored.add(state.key)
+        raw = self.durable.load(self._durable_key)
+        if raw is None or len(state.ledger) > 0:
+            return
+        untrusted, sensitive = durable.restore(state.ledger, raw)
+        state.untrusted_input = state.untrusted_input or untrusted
+        state.sensitive_access = state.sensitive_access or sensitive
+        _log.info(
+            "durable session restored",
+            extra={
+                "key": self._durable_key,
+                "sources": len(state.ledger),
+                "trifecta": state.trifecta().to_json(),
+            },
+        )
+
+    def _maybe_persist(self, state: SessionState) -> None:
+        if self.durable is None or state.key.kind != "stdio-process":
+            return
+        try:
+            self.durable.save(
+                self._durable_key,
+                durable.snapshot(
+                    state.ledger,
+                    untrusted_input=state.untrusted_input,
+                    sensitive_access=state.sensitive_access,
+                ),
+            )
+        except OSError as exc:
+            _log.error("durable session write failed", extra={"error": str(exc)})

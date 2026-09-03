@@ -85,10 +85,28 @@ class Ablation:
         return "full" if not off else "no_" + "+".join(off)
 
 
-def load_suite_policy(suite: str, mode: Mode, ablation: Ablation | None = None) -> Policy:
-    """The shipped rules with the suite's tool table, at the requested mode."""
+def load_suite_policy(
+    suite: str, mode: Mode, ablation: Ablation | None = None, *, integrity: bool = False
+) -> Policy:
+    """The shipped rules with the suite's tool table, at the requested mode.
+
+    `integrity=True` inserts the shipped integrity rule (any external action
+    after untrusted input escalates) ahead of rule_of_two.
+    """
     ablation = ablation if ablation is not None else Ablation()
     common = yaml.safe_load((POLICY_DIR / "_common.yaml").read_text(encoding="utf-8"))
+    if integrity:
+        rules = list(common["rules"])
+        idx = next(i for i, r in enumerate(rules) if r["id"] == "rule_of_two")
+        rules.insert(
+            idx,
+            {
+                "id": "untrusted_then_external",
+                "when": {"effect": "external", "session_untrusted": True},
+                "then": "escalate",
+            },
+        )
+        common = {**common, "rules": rules}
     tools = yaml.safe_load((POLICY_DIR / f"{suite}.yaml").read_text(encoding="utf-8"))["tools"]
     doc = {**common, "tools": tools, "mode": mode.value}
     if mode is Mode.STRICT:

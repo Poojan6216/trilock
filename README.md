@@ -123,12 +123,18 @@ both modes — full table in [RESULTS.md](RESULTS.md#attacks-that-work-against-t
 | paraphrase | **0.571** | 0.000 | n-gram attribution misses restated content; strict never consults it |
 | encoding (base64×2, rot13, hex) | **0.571** | 0.000 | one layer of base64 is decoded, nothing else |
 | approval fatigue + paraphrase | **0.333** | 0.000 | a human who has said yes N times |
-| session splitting | **1.000** | **1.000** | read in one session, send in another: structural |
-| laundering via disk | **0.333** | **0.333** | park the secret, re-read it through a trusted-labelled tool |
+| session splitting | **1.000** → 0.000 with `sessions: {durable: true}` | same | read in one session, reconnect, send from another; closed by durable sessions (opt-in) |
+| laundering via a misclassified store | 0.250 → **0.000** | same | park the secret in a "memory" tool, recall it in a new session; closed by persistent sink taint (default on) |
 | scope probing, padding, destination-in-injection | 0.000 | 0.000 | reported so the zeros sit next to the losses |
 
-None of these is fixed-and-hidden. Session identity is the weakest structural
-link and the threat model says so.
+None of these is fixed-and-hidden: where a loss was closed, the pre-fix number
+stays in the table (`RESULTS.md` renders *before / shipped / durable* side by
+side). Session identity across users and machines remains the weakest
+structural link and the threat model says so.
+
+A fifth policy, `integrity`, escalates every external action after untrusted
+input — closing the two-leg integrity attacks behind the residual AgentDojo ASR
+— and `RESULTS.md` reports what it costs in utility.
 
 ## Why detection is not enough — our own numbers
 
@@ -162,6 +168,9 @@ sentence at the end of a 4 KB document. The heuristics measure precision 0.962
   the ledger cannot launder a denied call into an allowed one.
 * `strict` decides on session-level legs and ignores attribution; `dataflow`
   consults attribution for utility and is exactly as strong as attribution is.
+* Provenance outlives the session: what an agent *writes* while tainted stays
+  tainted when it is read back (sink taint, hashes only), and a session's legs
+  can survive a reconnect for the same user (durable sessions, opt-in).
 
 ## Prior art, honestly
 

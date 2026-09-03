@@ -117,6 +117,39 @@ Two further consequences, both accepted and documented:
 * **Reset is explicit.** Nothing un-sets a leg except `SessionRegistry.reset`.
   There is no timeout after which "the agent has probably moved on".
 
+## Provenance that outlives a session
+
+Two of the red team's published losses were *structural*: they did not defeat a
+rule, they stepped outside the unit the rules account over — the session. Both
+are now closed, with the before/after numbers kept in RESULTS.md.
+
+**Sink taint** (`taint/sinks.py`, on by default). Any allowed call whose
+arguments carried taint records the SHA-256 of every string argument as a
+*sink*, with the taint it carried, in `.trilock/sinks.json`. Any later call — this
+session, another, after a restart — whose arguments name that identifier
+inherits the taint on its result. So a `memory.store(key, <tainted>)` that the
+policy author classified as a plain local tool (`effect: none`, two legs, allowed)
+does not launder the secret: the `memory.recall(key)` in a fresh session returns
+content labelled untrusted+sensitive, and the send is the third leg. Laundering
+went from 0.250 to 0.000 in both modes. It deliberately over-approximates —
+every string argument of a tainted write is a sink, because guessing which one
+"is the key" is how a defence gets bypassed — and it stores hashes, never values.
+
+**Durable sessions** (`taint/durable.py`, opt-in via `sessions: {durable: true}`).
+A session's legs, evicted floor and n-gram fingerprints — never exact tokens,
+which are emails, URLs and secret-shaped strings — are persisted per (OS user,
+config file) and resumed by the next stdio process within a TTL (24 h). Read in
+one session, reconnect, send from a fresh one: the send is now the third leg.
+Session splitting went from 1.000 to 0.000 with it on. It is opt-in because it
+trades utility — a morning of reading untrusted pages makes the afternoon's
+first external action an escalation — and it does not cross OS users, machines,
+or the TTL.
+
+**What neither closes.** A different OS user, a different machine, an attacker
+who waits out the TTL, or content that leaves through a channel Trilock does not
+see (the model telling the user to paste something) all remain outside the
+session boundary and are listed below.
+
 ## Known gaps in attribution (why `strict` exists)
 
 `dataflow` mode decides on argument attribution: which ledger sources an
@@ -130,8 +163,11 @@ assumed away (`tests/unit/test_propagate.py`, rows marked KNOWN MISS):
 * **Multi-layer encoding.** One layer of base64 is decoded; two are not.
 * **Long-document tail.** Each source's fingerprint is capped (default 4096
   n-grams ≈ the first ~20 KB); content beyond the cap is not fingerprinted.
-* **Laundering through a `public`/trusted tool.** Content that leaves via one
-  tool and re-enters via another labelled trusted arrives with a clean label.
+* **Laundering through a `public`/trusted tool — within a session, before the
+  content is written anywhere.** Content passed through an in-memory tool and
+  back is still attributed to its original source by n-gram (the red team's
+  `via_trusted_public_tool` scores 0). Once it is *written* somewhere, sink taint
+  takes over (above).
 
 `strict` mode ignores attribution and decides on session-level legs, so every
 one of these misses is caught — at the utility cost measured in RESULTS.md.
@@ -141,11 +177,16 @@ purpose and publishes the resulting ASR per mode.
 ## The weakest links, ranked
 
 1. **Session identity under stateless HTTP** (above). Structural; mitigated by
-   refusing to enforce rather than by being right.
+   refusing to enforce rather than by being right. Session *splitting* on stdio
+   is closed by durable sessions only when opted in and only for the same user,
+   machine and TTL window.
 2. **Approval fatigue.** A present human is the last line for ESCALATE, and
    humans habituate. Measured, not solved.
 3. **Attribution misses in `dataflow`.** Enumerated above; `strict` is the
    remedy and costs utility.
+3a. **Two-leg integrity attacks.** The trifecta bounds disclosure, not every
+   action; `policies/integrity.yaml` escalates any external action after
+   untrusted input, at a measured utility cost (RESULTS.md).
 4. **Policy authoring.** An unclassified tool is never allowed, but a
    *misclassified* one — an egress marked `reads: trusted`, say — is a hole the
    author made. `trilock check` prints the resolved table so it can be reviewed.

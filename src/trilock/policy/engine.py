@@ -106,6 +106,11 @@ def _matches(when: RuleCondition, call: ToolCall, session: SessionSnapshot, poli
         return False
     if when.session_touched is not None and not _session_touched(when.session_touched, session):
         return False
+    if (
+        when.session_untrusted is not None
+        and session.trifecta.untrusted_input is not when.session_untrusted
+    ):
+        return False
     return when.detector_above is None or _detector_above(when.detector_above, session)
 
 

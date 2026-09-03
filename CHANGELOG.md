@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-09-03
+
+Provenance that outlives the session, and the integrity policy.
+
+### Added
+- **Persistent sink taint** (`taint/sinks.py`, on by default): the hashed
+  identifiers of every allowed call whose arguments carried taint are recorded,
+  and any later call naming one of them inherits the taint - across sessions and
+  restarts. Closes laundering through a misclassified store: 0.250 -> 0.000 in
+  both modes.
+- **Durable sessions** (`taint/durable.py`, opt-in `sessions: {durable: true}`):
+  a stdio session's legs and fingerprints (never raw tokens) persist per OS user
+  and config and resume within a TTL. Closes session splitting for same-user
+  reconnects: 1.000 -> 0.000.
+- **`integrity` policy** and the `session_untrusted` rule condition: escalate
+  every external action after untrusted input, catching the two-leg integrity
+  attacks that make up the residual AgentDojo ASR; measured as a fifth
+  configuration.
+- The red-team harness now models a persistent store honestly: a denied write
+  leaves nothing to read back, and an exfil body must come from what the model
+  actually read. The first version let a denied write be read back, which
+  overstated one loss.
+
 ## [0.1.0] - 2026-09-03
 
 First release. Everything below was built from `BUILD_SPEC.md`, phase by phase,

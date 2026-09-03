@@ -6,4 +6,4 @@ import trilock
 
 
 def test_version() -> None:
-    assert trilock.__version__ == "0.1.0"
+    assert trilock.__version__ == "0.2.0"

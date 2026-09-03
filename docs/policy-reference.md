@@ -98,6 +98,7 @@ would match everything and shadow every later rule).
 | `trifecta_legs` | 0–3 | the call stands on **at least** this many legs (so `0` matches every call) |
 | `args_tainted_by` | `untrusted` | the call's arguments carry untrusted taint — **mode-dependent**, see below |
 | `session_touched` | `sensitive` | the session has ingested sensitive content |
+| `session_untrusted` | bool | the session has ingested untrusted content. With `effect: external` this is the *integrity* rule (`policies/integrity.yaml`): every external action after untrusted input, whether or not private data was touched |
 | `unclassified` | bool | the tool has no classification |
 | `scope_violation` | bool | an argument fell outside the tool's declared scope |
 | `detector_above` | `{name: threshold}` | **every** named detector scored above its threshold. A detector with no score (timed out, crashed, disabled) never satisfies this. Advisory only: may select a stricter verdict, never a looser one |
@@ -146,6 +147,18 @@ untrusted content out of a session that has seen private data is the
 exfiltration and is refused; any other third leg goes to a human; an unknown
 tool goes to a human; everything else — at most two legs — is allowed.
 
+**Integrity** (`policies/integrity.yaml`) is `dataflow` plus one rule ahead of
+`rule_of_two`:
+
+```yaml
+  - { id: untrusted_then_external, when: { effect: external, session_untrusted: true }, then: escalate }
+```
+
+Once a session has read untrusted content, every external action is put to a
+human — including the two-leg integrity attacks (book a hotel, invite a user)
+that the trifecta's confidentiality rule permits. RESULTS.md measures what it
+costs.
+
 **Strict** removes `tainted_egress` (it would be redundant: `rule_of_two` is
 now a `deny`) and denies unclassified tools.
 
@@ -170,6 +183,29 @@ rules:
 tools:
   "mail.send": { effect: external, scope: ["@example.com", "@.corp.example.com"] }
 ```
+
+## Runtime state in `trilock.yaml` that shapes decisions
+
+These live in the runtime config, not the policy, but they change what a
+decision can know:
+
+```yaml
+sinks:                       # taint that persists on what the agent writes (default on)
+  enabled: true
+  path: .trilock/sinks.json
+  max_entries: 5000
+  ttl_hours: 168
+sessions:                    # session state that survives a reconnect (default off)
+  durable: false
+  ttl_hours: 24
+  path: .trilock/sessions
+```
+
+`sinks` records the hashed identifiers of every allowed call whose arguments
+carried taint and re-attaches that taint to any later call naming one of them.
+`sessions.durable` resumes a stdio session's legs and fingerprints for the same
+OS user and config within the TTL. Both store hashes and labels only. See
+`docs/threat-model.md`, "Provenance that outlives a session".
 
 ## Errors
 

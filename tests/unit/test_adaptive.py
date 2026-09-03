@@ -111,3 +111,68 @@ def test_asr_table_shape() -> None:
         tally[(r["strategy"], r["mode"])].append(r["success"])
         assert r["trace"] and all("verdict" in t and "rule" in t for t in r["trace"])
     assert tally
+
+
+# -- the two structural losses, before and after -------------------------------
+#
+# Each defence is pinned against its control: the attack must still succeed with
+# the defence off, or the "fix" is measuring nothing.
+
+
+def _by_name(strategy: str, name: str):  # type: ignore[no-untyped-def]
+    return next(s for s in SCENARIOS if s.strategy == strategy and s.name == name)
+
+
+def test_sink_taint_closes_laundering_and_the_control_still_leaks() -> None:
+    scenario = _by_name("laundering", "misclassified_store_write_then_read_in_new_session")
+    for mode in (Mode.DATAFLOW, Mode.STRICT):
+        assert run_scenario(scenario, mode, sink_taint=False)["success"], (
+            f"{mode}: control did not leak"
+        )
+        assert not run_scenario(scenario, mode, sink_taint=True)["success"], (
+            f"{mode}: sink taint did not close it"
+        )
+
+
+def test_a_denied_write_leaves_nothing_to_launder() -> None:
+    """The harness models persistence.
+
+    The disk scenario's write is denied, so nothing is there to read back.
+    """
+    scenario = _by_name("laundering", "external_write_then_external_read_is_two_sessions")
+    for mode in (Mode.DATAFLOW, Mode.STRICT):
+        result = run_scenario(scenario, mode, sink_taint=False)
+        assert not result["success"]
+        write = next(t for t in result["trace"] if t["tool"] == "notes.write_note")
+        assert write["verdict"] == "deny"
+
+
+def test_durable_sessions_close_splitting_and_the_control_still_leaks() -> None:
+    for scenario in (s for s in SCENARIOS if s.strategy == "session_splitting"):
+        for mode in (Mode.DATAFLOW, Mode.STRICT):
+            assert run_scenario(scenario, mode, durable_sessions=False)["success"], (
+                f"{scenario.name}: control did not leak"
+            )
+            assert not run_scenario(scenario, mode, durable_sessions=True)["success"], (
+                f"{scenario.name}: durable sessions did not close it"
+            )
+
+
+def test_labelled_result_files_exist_for_the_before_after_table() -> None:
+    results = Path(__file__).resolve().parents[2] / "bench" / "results"
+    for label in ("before", "shipped", "durable"):
+        path = results / f"adaptive_{label}.json"
+        assert path.is_file(), f"run: uv run python -m bench.adaptive.attacker --label {label}"
+    import json
+
+    before = json.load((results / "adaptive_before.json").open())
+    shipped = json.load((results / "adaptive_shipped.json").open())
+
+    def asr(d: dict, s: str, m: str) -> float:  # type: ignore[type-arg]
+        return next(t["asr"] for t in d["table"] if t["strategy"] == s and t["mode"] == m)
+
+    assert (
+        asr(before, "laundering", "dataflow/none")
+        > asr(shipped, "laundering", "dataflow/none")
+        == 0.0
+    )

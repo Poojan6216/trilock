@@ -49,6 +49,7 @@ class SessionState:
         call_id: str,
         contents: Sequence[str],
         classification: ToolClass | None,
+        inherited: TaintLabel | None = None,
     ) -> tuple[list[str], list[Normalized]]:
         """Label one inbound tool result and fold it into the session.
 
@@ -73,6 +74,12 @@ class SessionState:
             trust=TrustLevel.UNTRUSTED if untrusted else TrustLevel.TRUSTED,
             sensitivity=Sensitivity.SENSITIVE if sensitive else Sensitivity.PUBLIC,
         )
+        if inherited is not None and not inherited.is_clean:
+            # Read back from a sink that tainted content was written to: the
+            # tool's own classification cannot launder it.
+            label = label.join(inherited)
+            untrusted = untrusted or inherited.is_untrusted
+            sensitive = sensitive or inherited.is_sensitive
         entry = self.ledger.record(server, tool, call_id, combined, label)
         label = label.join(TaintLabel(sources=frozenset({entry.source})))
         # Re-record with the source attached so the ledger's own label names it.

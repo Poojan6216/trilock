@@ -182,81 +182,89 @@ def latest(pattern: str) -> Path | None:
 
 
 def render_attacks_section() -> str:
-    """The 'Attacks that work against Trilock' table, from the latest adaptive run.
+    """The 'Attacks that work against Trilock' tables, from the labelled adaptive runs.
 
-    Task 6.3: report the losses. Nothing here is hand-entered; regenerate with
-    `uv run python -m bench.adaptive.attacker`. Where a strategy was fixed, the
-    pre-fix number stays in the table with the commit that changed it.
+    Task 6.3: report the losses, and where something was fixed keep the pre-fix
+    number in the table. Three labelled runs of the same red team:
+    `adaptive_before.json` (no persistent sink taint), `adaptive_shipped.json`
+    (Trilock as shipped: sink taint on, durable sessions off) and
+    `adaptive_durable.json` (durable sessions opted in). Regenerate with
+    `uv run python -m bench.adaptive.attacker --label ...`; see the Makefile-free
+    recipe at the top of that module.
     """
-    path = latest("adaptive_*.json")
-    if path is None:
-        return ""
-    data = json.loads(path.read_text(encoding="utf-8"))
+    runs = {
+        "before": RESULTS_DIR / "adaptive_before.json",
+        "shipped": RESULTS_DIR / "adaptive_shipped.json",
+        "durable": RESULTS_DIR / "adaptive_durable.json",
+    }
+    data = {k: json.loads(p.read_text(encoding="utf-8")) for k, p in runs.items() if p.is_file()}
+    if not data:
+        path = latest("adaptive_*.json")
+        if path is None:
+            return ""
+        data = {"shipped": json.loads(path.read_text(encoding="utf-8"))}
+    head = data.get("shipped") or next(iter(data.values()))
+
+    def cell(run: str, strategy: str, mode: str) -> str:
+        d = data.get(run)
+        if d is None:
+            return "-"
+        t = next((t for t in d["table"] if t["strategy"] == strategy and t["mode"] == mode), None)
+        if t is None:
+            return "-"
+        return f"**{t['asr']:.3f}**" if t["asr"] > 0 else f"{t['asr']:.3f}"
+
+    strategies = sorted({t["strategy"] for d in data.values() for t in d["table"]})
     lines = [
         "## Attacks that work against Trilock",
         "",
-        f"From `{data['command']}` at {data['measured_at']} on commit `{data['commit']}` "
-        f"(raw: `{path.relative_to(REPO)}`). Every strategy is run in both modes under three human models: "
-        "**none** (an ESCALATE is blocked - the oracle floor), **attentive** (declines if the literal credential "
-        "is visible in the approval prompt, approves otherwise - careful, but cannot decode base64 or spot a "
-        "paraphrase by eye), and **tired** (approves everything after "
-        f"{data['fatigue_after']} prompts). A row is a *loss* when ASR is above zero.",
+        f"From `uv run python -m bench.adaptive.attacker` (raw: {', '.join(f'`{p.relative_to(REPO)}`' for k, p in runs.items() if k in data)}), "
+        f"latest at {head['measured_at']} on commit `{head['commit']}`. Every strategy runs in both modes under three human "
+        "models: **none** (an ESCALATE is blocked - the oracle floor), **attentive** (declines if the literal credential is visible "
+        "in the approval prompt, approves otherwise - careful, but cannot decode base64 or spot a paraphrase by eye), and **tired** "
+        f"(approves everything after {head['fatigue_after']} prompts). Bold is a loss.",
         "",
-        "| strategy | dataflow / none | dataflow / attentive | dataflow / tired | strict / none | strict / attentive | strict / tired |",
-        "|---|---:|---:|---:|---:|---:|---:|",
-    ]
-    by = {(t["strategy"], t["mode"]): t for t in data["table"]}
-    strategies = sorted({t["strategy"] for t in data["table"]})
-    order = [
-        "dataflow/none",
-        "dataflow/attentive",
-        "dataflow/tired",
-        "strict/none",
-        "strict/attentive",
-        "strict/tired",
+        "Three columns per mode, because two structural losses were fixed after they were published and task 6.3 says the "
+        "pre-fix number stays in the table: **before** (no persistent sink taint), **shipped** (sink taint on by default, "
+        "durable sessions off), **durable** (`sessions: {durable: true}` opted in).",
+        "",
+        "| strategy | human | dataflow before | dataflow shipped | dataflow durable | strict before | strict shipped | strict durable |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
     ]
     for strategy in strategies:
-        cells = []
-        for mode in order:
-            t = by.get((strategy, mode))
-            cells.append(
-                f"**{t['asr']:.3f}** ({t['successes']}/{t['scenarios']})"
-                if t and t["asr"] > 0
-                else (f"{t['asr']:.3f}" if t else "-")
-            )
-        lines.append(f"| {strategy} | " + " | ".join(cells) + " |")
+        for human in ("none", "attentive"):
+            cells = [
+                cell(run, strategy, f"{mode}/{human}")
+                for mode in ("dataflow", "strict")
+                for run in ("before", "shipped", "durable")
+            ]
+            lines.append(f"| {strategy} | {human} | " + " | ".join(cells) + " |")
     lines += [
         "",
-        "### What the losses mean, and why they are not fixed",
+        "### What the losses mean, and what was done about each",
         "",
-        "* **paraphrase, encoding, approval fatigue (dataflow only).** These are the attribution seam the design "
-        "documents: a body that shares no 5-grams with the ledger and shows no literal credential is *unattributable*, "
-        "so `tainted_egress` cannot fire, `rule_of_two` escalates, and a human who cannot see the secret says yes. "
-        "`strict` mode scores zero on every one of these because it does not consult attribution at all - and pays for "
-        "that in the utility table above. This is the trade, measured. It is not fixed because fixing it in `dataflow` "
-        "would mean becoming `strict`.",
-        "* **session_splitting (both modes).** Read in one session, send in another: no single session ever holds three "
-        "legs. This is structural. Trilock's unit of accounting is the session, and an attacker who can drive two "
-        "sessions is outside what one session's ledger can see. The threat model names session identity as the weakest "
-        "link for this reason. Cross-session correlation by principal would narrow it and is v2.",
-        "* **laundering via disk (both modes).** Park the secret in a note during one session; a *fresh* session reads "
-        "it back through a tool labelled trusted and sends it with only two legs. Same structural root: content that "
-        "leaves the session and re-enters through a trusted-labelled tool arrives clean. A policy author can close this "
-        "particular hole by labelling any store that another tool can write to as `reads: untrusted` - which the "
-        "shipped default does for `notes.read_note`. The scenario deliberately overrides that to show the failure.",
-        "* **destination_leak, scope_probing, padding: 0.** Reported so the zeros are visible next to the losses. A naive "
-        "attacker who names the destination inside the injection is denied whatever the body looks like, because the "
-        "address itself attributes; payload-in-URL is visible to the human and refused; padding past the n-gram cap "
-        "does not defeat exact-token extraction, which has no cap.",
-        "",
-        "Successful scenarios, by name:",
+        "* **paraphrase, encoding, approval fatigue (dataflow only, attentive human).** The attribution seam the design "
+        "documents: a body sharing no 5-grams with the ledger and showing no literal credential is unattributable, so "
+        "`tainted_egress` cannot fire, `rule_of_two` escalates, and a human who cannot see the secret says yes. `strict` scores "
+        "zero on all of them because it never consults attribution, and pays for that in the utility table. **Not fixed**, on "
+        "purpose: fixing it inside `dataflow` means becoming `strict`, which is offered and measured.",
+        "* **laundering via a misclassified store (both modes) - fixed.** A `memory`/`cache`/`notes` tool the policy author did not "
+        "think of as an egress accepts the secret with two legs; a fresh session reads it back through a trusted-labelled tool and "
+        "sends it. **Persistent sink taint** (`taint/sinks.py`, on by default) records the hashed identifiers of every allowed call "
+        "whose arguments carried taint, and a later call naming one of them - any session, any process - inherits it. Before "
+        f"{cell('before', 'laundering', 'dataflow/none')} -> shipped {cell('shipped', 'laundering', 'dataflow/none')}. "
+        "The earlier version of this harness also let a *denied* write be read back, which flattered the attacker; it now models "
+        "the store, and only allowed writes persist.",
+        "* **session splitting (both modes) - fixed, opt-in.** Read in one session, reconnect, send from a fresh one: the secret "
+        "travels in the model's own context where no tool call can see it. **Durable sessions** (`taint/durable.py`, "
+        "`sessions: {durable: true}`) persist a session's legs and fingerprints - never raw tokens - per user and config, and the "
+        "next process within the TTL resumes them, so the send is the third leg. Shipped "
+        f"{cell('shipped', 'session_splitting', 'dataflow/none')} -> durable {cell('durable', 'session_splitting', 'dataflow/none')}. "
+        "Opt-in because it trades utility: every new session inherits the previous one's legs for 24 hours. A different OS user, a "
+        "different machine, or a TTL expiry still splits.",
+        "* **destination_leak, scope_probing, padding: 0.** Reported so the zeros sit next to the losses.",
         "",
     ]
-    wins = [r for r in data["rows"] if r["success"]]
-    for r in wins:
-        lines.append(f"* `{r['mode']}` {r['strategy']}/{r['scenario']} - {r['notes']}")
-    if not wins:
-        lines.append("* (none - which would mean the attacker is too weak; see BUILD_SPEC 6.3)")
     return "\n".join(lines) + "\n"
 
 
@@ -267,8 +275,9 @@ def _residual_note(payload: dict[str, Any]) -> str:
     verdict `allow / fewer_than_three_legs`: the session held untrusted input and
     an external action but had touched **no sensitive data**. Those are two-leg
     integrity attacks - book a hotel, invite a user, post a link - and the Rule
-    of Two permits two legs by design. This is written from the data so the
-    claim cannot drift from the numbers.
+    of Two permits two legs by design. Written from the data so the claim cannot
+    drift from the numbers. The `integrity` configuration adds the rule that
+    catches them, at the utility cost shown in the table.
     """
     per_suite = []
     for r in payload["rows"]:
@@ -277,7 +286,17 @@ def _residual_note(payload: dict[str, Any]) -> str:
         allowed = sum(v for k, v in r["verdicts"].items() if k.startswith("injection:allow"))
         total = sum(v for k, v in r["verdicts"].items() if k.startswith("injection:"))
         per_suite.append(
-            f"{r['suite']} ASR {r['targeted_asr']:.3f} ({allowed}/{total} injection-phase calls allowed, all as `fewer_than_three_legs`)"
+            f"{r['suite']} ASR {r['targeted_asr']:.3f} ({allowed}/{total} injection-phase calls allowed, "
+            "all as `fewer_than_three_legs`)"
+        )
+    integrity = payload["aggregate"].get("integrity/full")
+    tail = ""
+    if integrity:
+        tail = (
+            f" The `integrity` configuration (dataflow plus `untrusted_then_external -> escalate`) measures "
+            f"ASR **{integrity['targeted_asr']:.3f}** at benign utility {integrity['benign_utility']:.3f} "
+            f"(oracle) / {integrity['human_benign_utility']:.3f} (attentive human): that is the price of "
+            "closing the integrity class, and it is a policy choice, not a code change."
         )
     return (
         "The ASR that remains under `strict` and `dataflow` is **not** exfiltration slipping through. In every "
@@ -288,9 +307,7 @@ def _residual_note(payload: dict[str, Any]) -> str:
         "two legs by design: it bounds what a hijacked agent can *disclose*, not everything it can *do*. Per suite: "
         + "; ".join(per_suite)
         + ". "
-        "`workspace`, where email and files are classified sensitive, is 0.000. A policy that escalates *every* external "
-        "action after untrusted input is expressible (`when: {effect: external, trifecta_legs: 2}` -> `escalate`) and "
-        "would catch these at a further utility cost; it is not the shipped default and its number is not claimed here."
+        "`workspace`, where email and files are classified sensitive, is 0.000." + tail
     )
 
 

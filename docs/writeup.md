@@ -120,11 +120,21 @@ text — it asks whether the *session* has read untrusted content — and it pay
 for that in section 3. That is the trade, and it is now a number instead of an
 adjective.
 
-The last two non-zero rows are structural. Trilock's unit of accounting is the
-session; an attacker who can drive two sessions is outside what one session's
-ledger can see. The threat model names session identity as the weakest link
-for this reason, and under stateless HTTP — where the SDK builds a fresh
-connection per request — Trilock *refuses to enforce* rather than pretend.
+The last two non-zero rows were structural: they stepped outside the unit the
+rules account over — the session. We published them, then closed both and kept
+the before/after in the table. **Sink taint** records the hashed identifiers of
+everything an agent writes while tainted and re-attaches the taint when any of
+them is read back, in any session; laundering through a misclassified
+"memory" tool went 0.250 → 0.000. **Durable sessions** persist a session's legs
+and fingerprints (never raw tokens) per user and config and resume them on
+reconnect; session splitting went 1.000 → 0.000 with it opted in. Neither
+crosses OS users, machines or a TTL, and under stateless HTTP — where the SDK
+builds a fresh connection per request — Trilock still *refuses to enforce*
+rather than pretend.
+
+Getting there also fixed the red team. The first harness let a *denied* write be
+read back in the next session, flattering the attacker; it now models the
+store, and an exfil body has to come from what the model actually read.
 
 One row we did not expect to be zero: a naive attacker who names the
 destination address inside the injection is denied whatever the body looks

@@ -36,6 +36,7 @@ from trilock.policy.scope import check as check_scope
 from trilock.policy.trifecta import SessionState, is_external
 from trilock.taint.labels import new_call_id
 from trilock.taint.propagate import attribute
+from trilock.taint.sinks import SinkStore
 from trilock.taint.store import SessionKey, SessionLedger
 
 REPO = Path(__file__).resolve().parents[2]
@@ -66,8 +67,9 @@ def policy_for(mode: Mode, overrides: dict[str, Any]) -> Policy:
 class ScriptedSession:
     """Trilock's per-session state, driven by a script instead of a proxy."""
 
-    def __init__(self, policy: Policy, key: str) -> None:
+    def __init__(self, policy: Policy, key: str, sinks: SinkStore | None = None) -> None:
         self.policy = policy
+        self.sinks = sinks
         skey = SessionKey(kind="stdio-process", value=key)
         self.state = SessionState(key=skey, ledger=SessionLedger(key=skey))
 
@@ -85,10 +87,19 @@ class ScriptedSession:
             normalisation_removed=sum(r.removed_chars for r in self.state.normalisations),
         )
         decision = decide(ToolCall(tool=step.tool, arguments=step.arguments), snapshot, self.policy)
-        if decision.verdict is Verdict.ALLOW and step.result is not None:
-            self.state.record_result(
-                step.tool.partition(".")[0], step.tool, new_call_id(), [step.result], classification
-            )
+        if decision.verdict is Verdict.ALLOW:
+            inherited = self.sinks.lookup(step.arguments) if self.sinks is not None else None
+            if step.result is not None:
+                self.state.record_result(
+                    step.tool.partition(".")[0],
+                    step.tool,
+                    new_call_id(),
+                    [step.result],
+                    classification,
+                    inherited=inherited,
+                )
+            if self.sinks is not None and attribution.matches:
+                self.sinks.record(step.tool, step.arguments, attribution.label)
         return decision
 
 
@@ -113,16 +124,51 @@ def _human_would_approve(step: Step, human: str, escalations_seen: int, fatigue_
 
 
 def run_scenario(
-    scenario: Scenario, mode: Mode, *, human: str = "none", fatigue_after: int = 3
+    scenario: Scenario,
+    mode: Mode,
+    *,
+    human: str = "none",
+    fatigue_after: int = 3,
+    sink_taint: bool = True,
+    durable_sessions: bool = False,
 ) -> dict[str, Any]:
     """Execute one scenario under a human model; report whether the exfiltration got out."""
     policy = policy_for(mode, scenario.policy_overrides)
     sessions: dict[str, ScriptedSession] = {}
+    store: dict[str, str] = {}  # what actually got persisted by *allowed* writes
+    sinks = (
+        SinkStore() if sink_taint else None
+    )  # shared across the scenario's sessions, like the file-backed store
     escalations_seen = 0
     trace: list[dict[str, Any]] = []
     success = False
     for step in scenario.steps:
-        session = sessions.setdefault(step.session, ScriptedSession(policy, step.session))
+        if step.reads is not None:
+            # A read returns what an allowed write stored, or nothing. Never the scripted secret.
+            step = Step(
+                step.tool,
+                step.arguments,
+                result=store.get(step.reads, "(nothing stored)"),
+                exfil=step.exfil,
+                session=step.session,
+                reads=step.reads,
+            )
+        if step.session not in sessions:
+            fresh = ScriptedSession(policy, step.session, sinks)
+            if durable_sessions and sessions:
+                # A reconnect by the same user: the new session resumes the last one's state.
+                previous = list(sessions.values())[-1].state
+                from trilock.taint import durable as _durable
+
+                snap = _durable.snapshot(
+                    previous.ledger,
+                    untrusted_input=previous.untrusted_input,
+                    sensitive_access=previous.sensitive_access,
+                )
+                u, sv = _durable.restore(fresh.state.ledger, snap)
+                fresh.state.untrusted_input, fresh.state.sensitive_access = u, sv
+            sessions[step.session] = fresh
+        session = sessions[step.session]
         decision = session.call(step)
         verdict = decision.verdict
         approved_by_human = False
@@ -140,6 +186,8 @@ def run_scenario(
                         [step.result],
                         policy.classify(step.tool),
                     )
+        if step.writes is not None and verdict is Verdict.ALLOW:
+            store[step.writes[0]] = step.writes[1]
         carried = _carries_secret(step.arguments)
         if step.exfil and verdict is Verdict.ALLOW and carried:
             success = True
@@ -208,6 +256,20 @@ def main() -> int:
     parser.add_argument(
         "--fatigue-after", type=int, default=3, help="the human approves the (N+1)th escalation"
     )
+    parser.add_argument(
+        "--durable-sessions",
+        action="store_true",
+        help="model a same-user reconnect: each new session resumes the previous one's persisted state",
+    )
+    parser.add_argument(
+        "--label",
+        help="also write bench/results/adaptive_<label>.json, a stable name RESULTS.md can render",
+    )
+    parser.add_argument(
+        "--no-sink-taint",
+        action="store_true",
+        help="measure without persistent sink taint (the pre-fix number)",
+    )
     args = parser.parse_args()
     scenarios = [s for s in all_scenarios() if not args.strategy or s.strategy == args.strategy]
     started = time.time()
@@ -216,7 +278,14 @@ def main() -> int:
         for mode in (Mode.DATAFLOW, Mode.STRICT):
             for human in ("none", "attentive", "tired"):
                 rows.append(
-                    run_scenario(scenario, mode, human=human, fatigue_after=args.fatigue_after)
+                    run_scenario(
+                        scenario,
+                        mode,
+                        human=human,
+                        fatigue_after=args.fatigue_after,
+                        sink_taint=not args.no_sink_taint,
+                        durable_sessions=args.durable_sessions,
+                    )
                 )
 
     # ASR per strategy per mode.
@@ -240,12 +309,17 @@ def main() -> int:
         ).stdout.strip(),
         "command": "uv run python -m bench.adaptive.attacker " + " ".join(sys.argv[1:]),
         "fatigue_after": args.fatigue_after,
+        "sink_taint": not args.no_sink_taint,
+        "durable_sessions": args.durable_sessions,
         "table": table,
         "rows": rows,
     }
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     out = RESULTS_DIR / f"adaptive_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(started))}.json"
     out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    if args.label:
+        labelled = RESULTS_DIR / f"adaptive_{args.label}.json"
+        labelled.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(f"{'strategy':20} {'mode':22} {'ok/n':>7}  ASR")
     for t in table:
         print(

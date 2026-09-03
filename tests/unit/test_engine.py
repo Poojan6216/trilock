@@ -758,6 +758,30 @@ def _write_golden() -> None:
     )
 
 
+# -- the integrity rule (session_untrusted) ----------------------------------
+
+
+def test_session_untrusted_condition_expresses_the_integrity_rule() -> None:
+    integrity = load_policy(POLICIES / "integrity.yaml")
+    # untrusted + external, no sensitive data: two legs -> the trifecta allows, integrity escalates
+    two_legs = snap(untrusted=True, external=True, classification=EXTERNAL)
+    assert decide(CALL, two_legs, DEFAULT).verdict is Verdict.ALLOW
+    escalated = decide(CALL, two_legs, integrity)
+    assert escalated.verdict is Verdict.ESCALATE and escalated.rule_id == "untrusted_then_external"
+    # external with no untrusted input at all: nothing to escalate
+    assert (
+        decide(
+            CALL, snap(sensitive=True, external=True, classification=EXTERNAL), integrity
+        ).verdict
+        is Verdict.ALLOW
+    )
+    # the exfiltration is still a hard deny, ahead of the integrity rule
+    exfil = snap(
+        untrusted=True, sensitive=True, external=True, classification=EXTERNAL, attribution=TAINTED
+    )
+    assert decide(CALL, exfil, integrity).rule_id == "tainted_egress"
+
+
 # -- the unclassified floor ---------------------------------------------------
 
 

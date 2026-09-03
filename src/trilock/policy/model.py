@@ -119,6 +119,10 @@ class RuleCondition(_Strict):
     """Fires when the call's arguments are attributed to a source at this trust level."""
     session_touched: Sensitivity | None = None
     """Fires when the session has ingested content at this sensitivity."""
+    session_untrusted: bool | None = None
+    """Fires when the session has (or has not) ingested untrusted content. With
+    `effect: external` this expresses the *integrity* rule - any external action
+    after untrusted input - which the trifecta's confidentiality rule does not."""
     unclassified: bool | None = None
     scope_violation: bool | None = None
     """Fires when an external action's arguments fall outside its declared scope."""
@@ -136,6 +140,7 @@ class RuleCondition(_Strict):
                 self.trifecta_legs,
                 self.args_tainted_by,
                 self.session_touched,
+                self.session_untrusted,
                 self.unclassified,
                 self.scope_violation,
                 self.detector_above,
