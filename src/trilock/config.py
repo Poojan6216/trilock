@@ -1,0 +1,165 @@
+"""Runtime configuration: which upstream servers to proxy, and with what policy.
+
+Two files, two jobs:
+
+* ``trilock.yaml`` — this module. Upstream MCP servers, audit sink, detector
+  budget, and a pointer to the policy document.
+* ``policies/*.yaml`` — `trilock.policy.model`. The security policy itself,
+  loaded separately so a policy can be reviewed, diffed and shipped on its own.
+
+Resolution order for the runtime config is ``./trilock.yaml``, then
+``$XDG_CONFIG_HOME/trilock/config.yaml`` (falling back to
+``~/.config/trilock/config.yaml``).
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Annotated, Final, Literal
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+CONFIG_BASENAME: Final[str] = "trilock.yaml"
+XDG_RELATIVE: Final[str] = "trilock/config.yaml"
+STATE_DIRNAME: Final[str] = ".trilock"
+
+
+class ConfigError(ValueError):
+    """A configuration file is missing, unparseable, or internally inconsistent."""
+
+
+class _Strict(BaseModel):
+    """Base for every config model: unknown keys are an error, not a shrug.
+
+    A typo in a security tool's config must never silently disable a control.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class StdioUpstream(_Strict):
+    """An upstream MCP server launched as a subprocess and spoken to over stdio."""
+
+    transport: Literal["stdio"] = "stdio"
+    command: str
+    args: tuple[str, ...] = ()
+    env: dict[str, str] = Field(default_factory=dict)
+    cwd: Path | None = None
+    inherit_env: bool = True
+    """Pass the proxy's environment to the child. Set false for a hermetic child."""
+
+
+class HttpUpstream(_Strict):
+    """An upstream MCP server reached over Streamable HTTP."""
+
+    transport: Literal["http"] = "http"
+    url: str
+    headers: dict[str, str] = Field(default_factory=dict)
+
+
+Upstream = Annotated[StdioUpstream | HttpUpstream, Field(discriminator="transport")]
+
+
+class AuditConfig(_Strict):
+    """Where the hash-chained decision log is written."""
+
+    path: Path = Path(STATE_DIRNAME) / "audit.jsonl"
+    enabled: bool = True
+
+
+class DetectorConfig(_Strict):
+    """Advisory detectors. Never a control (Hard Rule 1); always killable (Hard Rule 2)."""
+
+    enabled: bool = True
+    timeout_ms: int = Field(default=150, gt=0, le=10_000)
+    heuristics: bool = True
+    promptguard: bool = False
+    """Off until ``trilock check --download-models`` has fetched the ONNX model."""
+    model_dir: Path = Path(STATE_DIRNAME) / "models"
+
+
+class LedgerConfig(_Strict):
+    """Bounds on the per-session provenance ledger."""
+
+    max_sources: int = Field(default=500, gt=0)
+    ngram_size: int = Field(default=5, ge=2, le=16)
+    max_ngrams_per_source: int = Field(default=4096, gt=0)
+
+
+class TrilockConfig(_Strict):
+    """The whole runtime configuration."""
+
+    version: Literal[1] = 1
+    servers: dict[str, Upstream] = Field(default_factory=dict)
+    policy: Path | None = None
+    """Path to the policy document. Relative paths resolve against the config file."""
+    audit: AuditConfig = Field(default_factory=AuditConfig)
+    detectors: DetectorConfig = Field(default_factory=DetectorConfig)
+    ledger: LedgerConfig = Field(default_factory=LedgerConfig)
+    state_dir: Path = Path(STATE_DIRNAME)
+    source_path: Path | None = None
+    """Where this config was loaded from. Set by the loader, never by the file."""
+
+    @model_validator(mode="after")
+    def _check_server_names(self) -> TrilockConfig:
+        for name in self.servers:
+            if not name or "." in name or "/" in name or name.isspace():
+                raise ValueError(
+                    f"upstream server name {name!r} is invalid: names must be non-empty "
+                    "and contain no '.' or '/' (the dot is the namespace separator "
+                    "in '<server>.<tool>')"
+                )
+        return self
+
+
+def default_config_paths() -> tuple[Path, ...]:
+    """The search path for ``trilock.yaml``, in priority order."""
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    xdg_root = Path(xdg) if xdg else Path.home() / ".config"
+    return (Path.cwd() / CONFIG_BASENAME, xdg_root / XDG_RELATIVE)
+
+
+def find_config() -> Path | None:
+    """Return the first existing config path, or ``None`` if there is none."""
+    return next((p for p in default_config_paths() if p.is_file()), None)
+
+
+def load_config(path: Path | None = None) -> TrilockConfig:
+    """Load and validate the runtime config.
+
+    With no ``path`` and no file on the search path, returns defaults with no
+    upstreams — which is a valid, if useless, proxy. Refusing to start here
+    would make ``trilock check`` unable to explain the problem.
+    """
+    resolved = path if path is not None else find_config()
+    if resolved is None:
+        return TrilockConfig()
+    if not resolved.is_file():
+        raise ConfigError(f"config file not found: {resolved}")
+    try:
+        raw = yaml.safe_load(resolved.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"{resolved}: invalid YAML: {exc}") from exc
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{resolved}: top level must be a mapping, got {type(raw).__name__}")
+    raw.pop("source_path", None)
+    try:
+        config = TrilockConfig.model_validate(raw)
+    except Exception as exc:
+        raise ConfigError(f"{resolved}: {exc}") from exc
+    base = resolved.parent
+    return config.model_copy(
+        update={
+            "source_path": resolved,
+            "policy": (base / config.policy) if config.policy is not None else None,
+            "state_dir": base / config.state_dir,
+            "audit": config.audit.model_copy(update={"path": base / config.audit.path}),
+            "detectors": config.detectors.model_copy(
+                update={"model_dir": base / config.detectors.model_dir}
+            ),
+        }
+    )
