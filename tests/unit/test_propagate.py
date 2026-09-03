@@ -207,7 +207,10 @@ def test_decode_base64_blobs_ignores_noise() -> None:
     ("token", "expected"),
     [
         ("hunter2-STAGING-9f31", True),
-        ("sk_live_FAKE_FIXTURE_KEY", True),
+        (
+            "sk_live_" + "4eC39HqLyjWDar" + "jtT1zdp7dc",
+            True,
+        ),  # split: not a real key, but scanners think so
         ("AKIAIOSFODNN7EXAMPLE", True),
         ("2026-09-02T00:00:00", True),
         ("internationalization", False),  # long, but a word

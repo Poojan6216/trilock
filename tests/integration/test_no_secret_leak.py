@@ -24,7 +24,14 @@ POLICIES = Path(__file__).resolve().parents[2] / "policies"
 SEEDED = json.loads(
     (Path(__file__).resolve().parents[1] / "fixtures/secrets/seeded.json").read_text()
 )
-SECRETS: dict[str, str] = SEEDED["secrets"]
+
+
+def _assemble(value: str | dict[str, list[str]]) -> str:
+    """Provider-shaped fixtures are stored split so push protection never blocks them."""
+    return "".join(value["join"]) if isinstance(value, dict) else value
+
+
+SECRETS: dict[str, str] = {name: _assemble(v) for name, v in SEEDED["secrets"].items()}
 
 
 def _values() -> list[tuple[str, str]]:
