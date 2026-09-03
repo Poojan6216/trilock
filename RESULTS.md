@@ -1,7 +1,7 @@
 # RESULTS
 
-> **Generated file.** Produced by `uv run python bench/run_bench.py --all --ablations` at 2026-09-03T03:13:12Z on commit `9f8f1ab`.
-> Raw data: `bench/results/agentdojo_20260903T031312Z.json`. Do not edit; re-run the command.
+> **Generated file.** Produced by `uv run python bench/run_bench.py --all --ablations` at 2026-09-03T15:29:01Z on commit `e057d2b`.
+> Raw data: `bench/results/agentdojo_20260903T152901Z.json`. Do not edit; re-run the command.
 
 ## How the agent was driven
 
@@ -55,16 +55,16 @@ The ASR that remains under `strict` and `dataflow` is **not** exfiltration slipp
 | normalisation | 0.567 | 0.452 | 0.135 | 0.835 | 0.733 | 0.135 |
 | trifecta_rule | 1.000 | 0.610 | 0.625 | 1.000 | 0.610 | 0.625 |
 
-Each row disables one component of dataflow mode. `detectors` are advisory and are not consulted by the oracle harness at all, so that row is expected to be identical to the baseline — which is itself the claim that the guarantee does not rest on detection. If any other row is identical to the baseline, that component contributed nothing on this benchmark, and the text says so.
+Each row disables one component of dataflow mode. What the table shows: **the trifecta rule carries the entire security number** - remove it and every column returns to undefended. **Attribution changes nothing in the oracle reading and everything in the human reading**: it is what turns a hard DENY into an ESCALATE a human can approve, i.e. it buys utility, not ASR. **Normalisation contributes nothing on this benchmark** - AgentDojo's injections are plain visible text, so there was nothing to un-hide; it exists for the hidden-text corpus in tests/fixtures/attacks/invisible. **Detectors** are identical by construction: the oracle harness passes no detector scores, and the shipped proxy's own test asserts that disabling every detector changes no block. None of these rows is hidden; a component that does nothing here says so.
 
 ## Decision latency (pure `decide()` path, per call)
 
 | configuration | p50 ms | p95 ms | p99 ms | calls |
 |---|---:|---:|---:|---:|
-| `undefended` (workspace) | 0.004 | 0.114 | 0.166 | 1660 |
-| `monitor` (workspace) | 0.24 | 0.396 | 0.519 | 1660 |
-| `strict` (workspace) | 0.25 | 0.416 | 0.538 | 1660 |
-| `dataflow` (workspace) | 0.257 | 0.448 | 0.59 | 1660 |
+| `undefended` (workspace) | 0.004 | 0.101 | 0.148 | 1660 |
+| `monitor` (workspace) | 0.273 | 0.46 | 0.656 | 1660 |
+| `strict` (workspace) | 0.23 | 0.388 | 0.596 | 1660 |
+| `dataflow` (workspace) | 0.2 | 0.312 | 0.406 | 1660 |
 
 Trilock adds zero LLM tokens: there is no model in the decision path. The marginal cost per protected call is CPU only.
 
@@ -81,7 +81,7 @@ Trilock adds zero LLM tokens: there is no model in the decision path. The margin
 
 ## Machine
 
-`macOS-15.7.9-x86_64-i386-64bit` · Python 3.12.13 · mcp-trilock 0.1.0
+`macOS-15.7.9-x86_64-i386-64bit` · Python 3.12.13 · mcp-trilock 0.2.0
 
 
 ## Attacks that work against Trilock
