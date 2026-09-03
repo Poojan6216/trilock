@@ -700,3 +700,13 @@ rules:
   uv run python bench/run_bench.py --all --ablations   # regenerates RESULTS.md (~40 min)
   uv run python -m bench.adaptive.attacker             # the red team
   ```
+
+### Post-release additions (0.2.0, 2026-09-03)
+
+After the spec was complete, the user asked for the project to be made more intelligent or its published losses closed. Done, with before/after numbers kept per task 6.3:
+
+- **Red-team honesty fix first.** The adaptive harness let a *denied* write be read back in the next session, flattering the attacker (disk laundering reported 0.333 that could not happen). It now models a persistent store - only allowed writes persist, and an exfil body must come from what the model actually read. Honest baseline: laundering 0.250 (one realistic path: a store tool misclassified as `effect: none`), session splitting 1.000.
+- **Persistent sink taint** (`taint/sinks.py`, default on): hashed identifiers of every allowed tainted call's string arguments, re-attached to any later call naming them, across sessions and restarts. Laundering 0.250 -> **0.000** both modes. End-to-end test across two proxy processes; control test shows the leak with it off.
+- **Durable sessions** (`taint/durable.py`, opt-in `sessions: {durable: true}`): legs + n-gram fingerprints (never exact tokens) persisted per OS user + config, resumed within 24 h. Session splitting 1.000 -> **0.000**. Control test shows the leak with it off.
+- **`integrity` policy** + `session_untrusted` condition: every external action after untrusted input escalates - the two-leg integrity class behind the residual AgentDojo 0.135. Measured as a fifth configuration (run in progress at time of writing; RESULTS.md carries the number).
+- RESULTS.md renders the red team as before / shipped / durable side by side. Version bumped to 0.2.0.

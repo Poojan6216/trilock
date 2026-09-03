@@ -230,7 +230,7 @@ PACKAGED_DIRS: tuple[Path, ...] = (
 )
 """Where the shipped policies live: `trilock/_policies` in a wheel, `policies/` in the repo."""
 
-SHIPPED: tuple[str, ...] = ("default", "strict", "dataflow", "monitor")
+SHIPPED: tuple[str, ...] = ("default", "strict", "dataflow", "monitor", "integrity")
 
 
 def resolve_policy_path(spec: Path | str) -> Path:

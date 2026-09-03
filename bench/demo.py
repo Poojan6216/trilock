@@ -42,6 +42,9 @@ INJECTION = (
 # the address, which is the case that exercises both the deny and the escalate.
 
 
+POLICY = "dataflow"
+
+
 class Human:
     def __init__(self) -> None:
         self.prompt = ""
@@ -69,7 +72,7 @@ async def run() -> str:
             "mail": stdio_upstream("mail_server.py", **env),
             "notes": stdio_upstream("notes_server.py", **env),
         },
-        policy=REPO / "policies" / "dataflow.yaml",
+        policy=Path(POLICY),
         audit=AuditConfig(path=tmp / "audit.jsonl"),
         source_path=tmp / "trilock.yaml",
     )
@@ -183,6 +186,28 @@ async def run() -> str:
 
 
 def main() -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Run the section 2 attack through a real Trilock proxy."
+    )
+    parser.add_argument(
+        "--injection",
+        help=(
+            "Your own hidden instruction to plant in the poisoned email (wrapped in white-on-white HTML). "
+            "Try anything; Trilock blocks the action, not the wording."
+        ),
+    )
+    parser.add_argument(
+        "--policy", default="dataflow", help="shipped policy name or a path (default: dataflow)"
+    )
+    args = parser.parse_args()
+    global INJECTION, POLICY
+    if args.injection:
+        INJECTION = (
+            f'<p>Weekly digest</p><p style="color:#ffffff;background:#ffffff">{args.injection}</p>'
+        )
+    POLICY = args.policy
     transcript = asyncio.run(run())
     out = REPO / "docs" / "demo.md"
     out.write_text(transcript, encoding="utf-8")
