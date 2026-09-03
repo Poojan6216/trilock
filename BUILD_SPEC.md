@@ -523,11 +523,11 @@ rules:
 
 **Goal:** it survives contact with an actual developer's setup.
 
-- [ ] **7.1 — Claude Code / Cursor / generic client integration**
+- [x] **7.1 — Claude Code / Cursor / generic client integration**
   `integrations/`. `trilock init` inspects an existing MCP client config, wraps every configured server behind Trilock, writes a generated config, and backs up the original byte-for-byte. `trilock uninstall` restores it exactly. Never overwrite a config without a backup.
   **Verify:** round-trip test over 5 real-world config shapes. Uninstall produces a byte-identical original.
 
-- [ ] **7.2 — Edge cases**
+- [x] **7.2 — Edge cases**
   Upstream dies mid-call; upstream returns 100MB; malformed JSON-RPC; deeply nested arguments; binary/image content blocks; concurrent calls in one session; two clients sharing one Trilock; stateless `2026-07-28` with no session id; a tool that returns another tool's schema; unicode in tool names; a policy referencing a tool that no upstream provides.
   **Verify:** each case has a test. Nothing crashes the proxy; every failure is logged and returns a valid MCP error.
 
@@ -535,7 +535,7 @@ rules:
   100 concurrent sessions, sustained call rate. No unbounded memory growth (the 1.2 ledger cap must actually bind). Detector batching under concurrency.
   **Verify:** a soak test result committed to `bench/results/soak.json`, including RSS over time.
 
-- [ ] **7.4 — Policy authoring ergonomics**
+- [x] **7.4 — Policy authoring ergonomics**
   `trilock check --suggest` connects to configured upstreams and proposes a starting classification for every tool from its name and description — presented as a draft the human edits, never auto-applied. This is the difference between a tool people try and a tool people abandon at the config file.
   **Verify:** run against 3+ real public MCP servers (filesystem, fetch, git) and produce a sensible draft policy.
 
@@ -630,6 +630,9 @@ rules:
 [5.4] Decision latency recorded per config in RESULTS.md from the bench (pure decide() path p50 ~0.13 ms, p99 <1 ms); detector latency in bench/results/detector_latency.json (heuristics 0.4-0.9 ms; Prompt Guard 11.7 ms short / 252 ms 4KB); proxy request-path overhead of the heuristic detector measured at 0.34 ms p50. Zero LLM tokens in the decision path is stated in RESULTS.md.
 [5.5] Ablation table (both readings): removing the trifecta rule returns every column to undefended — it carries the whole security number; removing attribution changes nothing in the oracle reading and drops human-reading utility 0.835 -> 0.567 (it buys utility, not ASR); normalisation contributes nothing on this benchmark (AgentDojo injections are visible text) and RESULTS.md says so; detectors identical by construction (oracle passes no scores) and the proxy test asserts on/off blocks are identical.
 [6.3] RESULTS.md 'Attacks that work against Trilock' rendered from bench/results/adaptive_*.json via run_bench.py --render-only: 8 strategies x 2 modes x 3 human models with non-zero rows (paraphrase 0.571, encoding 0.571, fatigue+paraphrase 0.333 in dataflow/attentive; session_splitting 1.000 and disk laundering 0.333 in both modes) plus a written explanation of each loss and why it is not fixed. No fix-and-hide: nothing was changed to lower a number.
+[7.1] trilock init/uninstall (integrations/claude_code.py, generic.py): wraps every server in a client config behind Trilock, writes trilock.yaml, backs up the ORIGINAL BYTES (verified before anything is touched) and uninstall restores byte-for-byte from the digest-checked backup. Round-trip tests over 5 shapes: Claude Code .mcp.json, Claude Desktop, Cursor (// comments + trailing commas), VS Code 'servers', Zed 'context_servers' with command objects. Double-init and corrupted-backup refused; dotted server names refused before anything changes.
+[7.4] trilock check --suggest (policy/suggest.py): transparent word-list drafter (name verb + description nouns -> effect/reads/sensitivity), every line carries its reason, weak-signal lines flagged REVIEW, conservative defaults, never applied. VERIFIED against 3 real public MCP servers launched via npx/uvx (filesystem 14 tools, fetch 1, git 12): all 27 drafted sensibly, 7 flagged REVIEW; the draft loads as a valid policy. Saved as docs/examples/suggested-filesystem-fetch-git.yaml. Real-server evidence fed back into the verb lists (checkout/reset act; log/diff/status/branch read).
+[7.2] Chaos fixture server + 12 edge-case tests: upstream dies mid-call (FOUND+FIXED: the SDK's MCPError 'Connection closed' escaped the handler; now a tool error + reconnect request), 8 MB result with bounded fingerprint, 60-deep nested args/results, image content blocks untouched, 20 concurrent calls in one session (ledger seq 0..19), two clients sharing one Trilock, unicode tool name routes, a result shaped like another tool's schema changes neither policy nor listing (Hard Rule 3), policy naming an absent tool is harmless, slow call cancellable with session surviving, raw non-JSON and bad-params/unknown-method frames over stdio answered with JSON-RPC errors and the session continues, degraded stateless identity reports rather than enforcing.
 ```
 
 ---

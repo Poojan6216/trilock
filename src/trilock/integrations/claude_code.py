@@ -114,9 +114,18 @@ def to_upstream(name: str, entry: dict[str, Any]) -> dict[str, Any]:
             upstream["headers"] = dict(entry["headers"])
         return upstream
     if "command" in entry:
-        upstream = {"transport": "stdio", "command": entry["command"]}
-        if entry.get("args"):
-            upstream["args"] = list(entry["args"])
+        command = entry["command"]
+        args = entry.get("args")
+        if isinstance(command, dict):  # Zed: {"command": {"path": ..., "args": [...]}}
+            args = command.get("args", args)
+            command = command.get("path")
+        if not isinstance(command, str) or not command:
+            raise IntegrationError(
+                f"server {name!r} has a command that is not a string; cannot wrap it"
+            )
+        upstream = {"transport": "stdio", "command": command}
+        if args:
+            upstream["args"] = list(args)
         if isinstance(entry.get("env"), dict):
             upstream["env"] = dict(entry["env"])
         if entry.get("cwd"):

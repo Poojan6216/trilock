@@ -17,6 +17,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, Final
 
+import anyio
 import mcp_types as types
 from mcp.server import InitializationOptions, NotificationOptions, ServerRequestContext
 from mcp.server.lowlevel import Server
@@ -38,13 +39,23 @@ from trilock.policy.model import load_policy
 from trilock.proxy.guard import CallContext, Guard
 from trilock.proxy.pins import PinStore
 from trilock.proxy.router import RouteError, Router
-from trilock.proxy.upstream import UpstreamUnavailableError, open_pool
+from trilock.proxy.upstream import UpstreamUnavailableError, describe_exception, open_pool
 
 SERVER_NAME: Final[str] = "trilock"
 
 _log = log.get("proxy.server")
 
 Ctx = ServerRequestContext[None, Any]
+
+
+def _request_reconnect(router: Router, qualified: str, reason: str) -> None:
+    """Ask the supervisor to rebuild the upstream behind a failed call, if it is a known one."""
+    try:
+        upstream, _ = router.resolve(qualified)
+    except (RouteError, UpstreamUnavailableError):
+        return
+    if "closed" in reason.lower() or "eof" in reason.lower() or "broken" in reason.lower():
+        upstream.request_reconnect(reason)
 
 
 def _as_mcp_error(exc: Exception) -> MCPError:
@@ -261,6 +272,26 @@ def build_server(router: Router, guard: Guard | None = None) -> Server[None]:
         except (RouteError, UpstreamUnavailableError) as exc:
             _log.warning("tools/call not routed", extra={"tool": params.name, "error": str(exc)})
             return _error_result(str(exc))
+        except MCPError as exc:
+            # The upstream answered with a protocol error, or its transport died
+            # under us ("Connection closed"). Either way the agent gets a tool
+            # error rather than a dropped session, and the supervisor is asked
+            # to rebuild the connection (Hard Rule 2: fail open on infrastructure).
+            _log.warning(
+                "upstream call failed",
+                extra={"tool": params.name, "code": exc.code, "error": exc.message},
+            )
+            _request_reconnect(router, params.name, exc.message)
+            return _error_result(f"upstream error for {params.name}: {exc.message}")
+        except Exception as exc:  # anything else the transport can throw
+            if isinstance(exc, anyio.get_cancelled_exc_class()):
+                raise
+            _log.error(
+                "upstream call raised",
+                extra={"tool": params.name, "error": describe_exception(exc)},
+            )
+            _request_reconnect(router, params.name, describe_exception(exc))
+            return _error_result(f"upstream failure for {params.name}: {type(exc).__name__}")
         if guard is not None and call_ctx is not None:
             result = await guard.ingest(call_ctx, result)
         return result

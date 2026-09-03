@@ -95,6 +95,16 @@ def check(
             help="Fetch the Prompt Guard 2 ONNX model once, verifying its pinned digest.",
         ),
     ] = False,
+    suggest: Annotated[
+        bool,
+        typer.Option(
+            "--suggest",
+            help=(
+                "Connect to the upstreams and print a DRAFT policy classifying every tool. "
+                "Never applied."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Validate configuration and policy, and print the resolved tool table."""
     log.configure(log_level)
@@ -115,17 +125,18 @@ def check(
             "and will time out (safely) - see bench/results/detector_latency.json."
         )
     source = cfg.source_path or find_config()
-    typer.echo(f"config: {source or '<defaults, no file found>'}")
-    typer.echo(f"upstream servers: {len(cfg.servers)}")
+    summary_err = suggest  # keep stdout pure YAML when drafting, so it can be redirected to a file
+    typer.echo(f"config: {source or '<defaults, no file found>'}", err=summary_err)
+    typer.echo(f"upstream servers: {len(cfg.servers)}", err=summary_err)
     for name, upstream in sorted(cfg.servers.items()):
         detail = (
             f"stdio: {upstream.command}"
             if upstream.transport == "stdio"
             else f"http: {upstream.url}"
         )
-        typer.echo(f"  {name}  ({detail})")
-    typer.echo(f"policy: {cfg.policy or '<none — proxy runs in passthrough>'}")
-    typer.echo(f"pins: {cfg.pins.path if cfg.pins.enabled else '<disabled>'}")
+        typer.echo(f"  {name}  ({detail})", err=summary_err)
+    typer.echo(f"policy: {cfg.policy or '<none — proxy runs in passthrough>'}", err=summary_err)
+    typer.echo(f"pins: {cfg.pins.path if cfg.pins.enabled else '<disabled>'}", err=summary_err)
 
     policy: Policy | None = None
     if cfg.policy is not None:
@@ -139,6 +150,12 @@ def check(
         typer.echo(f"rules: {len(policy.rules)} (first match wins, then default_deny)")
         for rule in policy.rules:
             typer.echo(f"  {rule.id:24} -> {rule.then.value}")
+    if suggest:
+        if not cfg.servers:
+            typer.echo("trilock: --suggest needs at least one configured upstream", err=True)
+            raise typer.Exit(2)
+        typer.echo(asyncio.run(_suggest(cfg)), nl=False)
+        return
     if cfg.servers:
         raise typer.Exit(asyncio.run(_inspect_upstreams(cfg, policy, repin=repin)))
     if policy is not None:
@@ -158,6 +175,26 @@ def _print_tool_table(policy: Policy, tools: list[str]) -> None:
         reads = cls.reads.value if cls.reads else "-"
         scope = ", ".join(cls.scope) if cls.scope else "-"
         typer.echo(f"{tool:32} {reads:10} {cls.sensitivity.value:12} {cls.effect.value:9} {scope}")
+
+
+async def _suggest(cfg: TrilockConfig) -> str:
+    """Draft a policy from the live tool listings. Printed, never written."""
+    from trilock.policy.suggest import Suggestion, render_draft
+    from trilock.policy.suggest import suggest as suggest_one
+    from trilock.proxy.server import build_proxy
+    from trilock.proxy.upstream import UpstreamUnavailableError
+
+    drafts: list[Suggestion] = []
+    async with build_proxy(cfg) as (_server, router, _guard):
+        for name in sorted(router.pool.upstreams):
+            upstream = router.pool.upstreams[name]
+            try:
+                listing = await upstream.client().list_tools()
+            except UpstreamUnavailableError as exc:
+                typer.echo(f"# {name}: unavailable ({exc.reason}); nothing drafted", err=True)
+                continue
+            drafts.extend(suggest_one(tool, name) for tool in listing.tools)
+    return render_draft(drafts)
 
 
 async def _inspect_upstreams(cfg: TrilockConfig, policy: Policy | None, *, repin: bool) -> int:

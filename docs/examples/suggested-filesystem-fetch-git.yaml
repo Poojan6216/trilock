@@ -1,0 +1,43 @@
+# DRAFT policy proposed by `trilock check --suggest`. Review every line before use.
+# Lines marked REVIEW had weak signal and were drafted conservatively.
+# An egress mistakenly drafted as a read is a hole; a read drafted as an egress
+# only costs a prompt. When unsure, keep the conservative choice.
+version: 1
+mode: dataflow
+unclassified: escalate
+tools:
+  "fetch.fetch": { reads: untrusted, sensitivity: sensitive }  # returns content from fetch, internet, url; touches user
+  "filesystem.create_directory": { sensitivity: public, effect: external }  # name verb 'create' acts on the world
+  "filesystem.directory_tree": { reads: untrusted, sensitivity: sensitive }  # returns content from file, files; touches file, files
+  "filesystem.edit_file": { sensitivity: sensitive, effect: external }  # name verb 'edit' acts on the world; touches file
+  "filesystem.get_file_info": { reads: untrusted, sensitivity: sensitive }  # returns content from file; touches file
+  "filesystem.list_allowed_directories": { reads: untrusted, sensitivity: sensitive }  # returns content from files; touches files
+  "filesystem.list_directory": { reads: untrusted, sensitivity: sensitive }  # returns content from file, files; touches file, files
+  "filesystem.list_directory_with_sizes": { reads: untrusted, sensitivity: sensitive }  # returns content from file, files; touches file, files
+  "filesystem.move_file": { sensitivity: sensitive, effect: external }  # name verb 'move' acts on the world; touches file, files
+  "filesystem.read_file": { reads: untrusted, sensitivity: sensitive }  # returns content from file; touches file
+  "filesystem.read_media_file": { reads: untrusted, sensitivity: sensitive }  # returns content from file, files; touches file, files
+  "filesystem.read_multiple_files": { reads: untrusted, sensitivity: sensitive }  # returns content from file, files; touches file, files
+  "filesystem.read_text_file": { reads: untrusted, sensitivity: sensitive }  # returns content from file, messages; touches file, messages
+  "filesystem.search_files": { reads: untrusted, sensitivity: sensitive }  # returns content from files, search; touches files
+  "filesystem.write_file": { sensitivity: sensitive, effect: external }  # name verb 'write' acts on the world; touches file, files
+  "git.git_add": { sensitivity: sensitive, effect: external }  # name verb 'add' acts on the world; touches file
+  "git.git_branch": { reads: trusted, sensitivity: sensitive }  # REVIEW  # reads local/system data with no external source named; unknown data; drafted sensitive to be safe
+  "git.git_checkout": { sensitivity: public, effect: external }  # name verb 'checkout' acts on the world
+  "git.git_commit": { sensitivity: sensitive, effect: external }  # name verb 'commit' acts on the world; touches records
+  "git.git_create_branch": { sensitivity: public, effect: external }  # name verb 'create' acts on the world
+  "git.git_diff": { reads: trusted, sensitivity: sensitive }  # REVIEW  # reads local/system data with no external source named; unknown data; drafted sensitive to be safe
+  "git.git_diff_staged": { reads: trusted, sensitivity: sensitive }  # REVIEW  # reads local/system data with no external source named; unknown data; drafted sensitive to be safe
+  "git.git_diff_unstaged": { reads: trusted, sensitivity: sensitive }  # REVIEW  # reads local/system data with no external source named; unknown data; drafted sensitive to be safe
+  "git.git_log": { reads: trusted, sensitivity: sensitive }  # REVIEW  # reads local/system data with no external source named; unknown data; drafted sensitive to be safe
+  "git.git_reset": { sensitivity: public, effect: external }  # name verb 'reset' acts on the world
+  "git.git_show": { reads: trusted, sensitivity: sensitive }  # REVIEW  # reads local/system data with no external source named; unknown data; drafted sensitive to be safe
+  "git.git_status": { reads: trusted, sensitivity: public }  # reads local/system data with no external source named; public data (status)
+rules:
+  - { id: scope_violation, when: { scope_violation: true }, then: deny }
+  - id: tainted_egress
+    when: { effect: external, args_tainted_by: untrusted, session_touched: sensitive }
+    then: deny
+  - { id: rule_of_two, when: { trifecta_legs: 3 }, then: escalate }
+  - { id: unclassified_tool, when: { unclassified: true }, then: escalate }
+  - { id: fewer_than_three_legs, when: { trifecta_legs: 0 }, then: allow }

@@ -35,7 +35,9 @@ _LIST_TOOLS = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
 
 
 def _drive(
-    *messages: dict[str, object], expect_ids: tuple[int, ...] = ()
+    *messages: dict[str, object] | str,
+    expect_ids: tuple[int, ...] = (),
+    config: Path | None = None,
 ) -> tuple[list[str], str, int]:
     """Run ``trilock serve``, feed it `messages`, return (stdout lines, stderr, rc).
 
@@ -44,8 +46,11 @@ def _drive(
     EOF shutdown against its handling of the last frame, which made this test
     flaky rather than wrong.
     """
+    argv = [sys.executable, "-m", "trilock.cli", "serve", "--log-level", "DEBUG"]
+    if config is not None:
+        argv += ["--config", str(config)]
     proc = subprocess.Popen(
-        [sys.executable, "-m", "trilock.cli", "serve", "--log-level", "DEBUG"],
+        argv,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -67,7 +72,7 @@ def _drive(
     reader.start()
     try:
         for message in messages:
-            proc.stdin.write(json.dumps(message) + "\n")
+            proc.stdin.write((message if isinstance(message, str) else json.dumps(message)) + "\n")
             proc.stdin.flush()
         outstanding = set(expect_ids)
         deadline = time.monotonic() + 30
