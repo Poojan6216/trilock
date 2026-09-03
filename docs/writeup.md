@@ -73,8 +73,9 @@ deterministic interlock can face:
 | configuration | benign utility | utility under attack | ASR | utility (attentive human) |
 |---|---:|---:|---:|---:|
 | undefended | 1.000 | 0.610 | **0.625** | 1.000 |
-| strict | 0.567 | 0.452 | **0.135** | 0.567 |
-| dataflow | 0.567 | 0.452 | **0.135** | 0.835 |
+| strict | 0.536 | 0.436 | **0.117** | 0.536 |
+| dataflow | 0.536 | 0.436 | **0.117** | 0.825 |
+| integrity | 0.412 | 0.441 | **0.022** | 0.825 |
 
 Three things the table says that a headline number would hide.
 
@@ -82,7 +83,7 @@ Three things the table says that a headline number would hide.
 benign tasks are *read a statement, pay the payee it names*. That is, byte for
 byte, the structure of an exfiltration, and the policy engine cannot tell them
 apart — only a human can. With one present, `dataflow` recovers most of it
-(0.835); `strict`, which never asks, does not.
+(0.825); `strict`, which never asks, does not.
 
 **The residual ASR is not exfiltration.** Every injection that got through did
 so as `fewer_than_three_legs`: untrusted input plus an external action, with
@@ -91,10 +92,15 @@ the workspace. Those are two-leg integrity attacks, and the trifecta model
 permits two legs by design — it bounds what a hijacked agent can *disclose*, not
 everything it can *do*. Where the data is sensitive (email, files) the number is
 0.000.
+The `integrity` row is the same engine with one more rule — escalate every
+external action after untrusted input — and it takes the ASR to **0.022**. The
+survivor is a single slack task whose goal is a `get_webpage` fetch of the
+attacker's URL: a read with an external side effect. It costs oracle utility
+(0.412) that a human brings back (0.825); the choice is the operator's.
 
 **The whole number is the trifecta rule.** In the ablation, removing it returns
 every column to undefended; removing attribution changes nothing in the oracle
-reading and drops the human reading's utility from 0.835 to 0.567 — attribution
+reading and drops the human reading's utility from 0.825 to 0.536 — attribution
 buys utility, not security; removing normalisation changes nothing on this
 benchmark, because AgentDojo's injections are visible text; and removing the
 detectors changes nothing by construction, which is the claim.

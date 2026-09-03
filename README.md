@@ -97,16 +97,19 @@ escalations for the task they asked for and declines the attacker's.
 |---|---:|---:|---:|---:|---:|---:|
 | `undefended` | 1.000 | 0.610 | **0.625** | 1.000 | 0.610 | **0.625** |
 | `monitor` | 1.000 | 0.610 | **0.625** | 1.000 | 0.610 | **0.625** |
-| `strict` | 0.567 | 0.452 | **0.135** | 0.567 | 0.452 | **0.135** |
-| `dataflow` | 0.567 | 0.452 | **0.135** | 0.835 | 0.733 | **0.135** |
+| `strict` | 0.536 | 0.436 | **0.117** | 0.536 | 0.436 | **0.117** |
+| `dataflow` | 0.536 | 0.436 | **0.117** | 0.825 | 0.718 | **0.117** |
+| `integrity` | 0.412 | 0.441 | **0.022** | 0.825 | 0.798 | **0.022** |
 
 Read it honestly: undefended ASR is high because the oracle always attacks.
-Trilock cuts it to **0.135** in both enforcing modes. The residual is **not**
+Trilock cuts it to **0.117** in both enforcing modes. The residual is **not**
 exfiltration — it is two-leg *integrity* attacks (book the attacker's hotel,
 invite the attacker to Slack) where no sensitive data was ever touched, which
 the trifecta model permits by design; `workspace`, where email is sensitive, is
-**0.000**. `dataflow` buys utility over `strict` (0.835 vs 0.567 with a human)
-at the same ASR, and pays for it in the red-team table below. The utility cost
+**0.000**. `dataflow` buys utility over `strict` (0.825 vs 0.536 with a human)
+at the same ASR, and pays for it in the red-team table below. `integrity`
+closes the two-leg class too — ASR **0.022**, with the one survivor named in
+`RESULTS.md` — at an oracle utility of 0.412 that a human brings back to 0.825. The utility cost
 of `strict`/`dataflow` on `banking` is real: paying the bill named in a file you
 just read *is* the shape of an exfiltration, and only a human can tell them apart.
 
@@ -137,8 +140,11 @@ side). Session identity across users and machines remains the weakest
 structural link and the threat model says so.
 
 A fifth policy, `integrity`, escalates every external action after untrusted
-input — closing the two-leg integrity attacks behind the residual AgentDojo ASR
-— and `RESULTS.md` reports what it costs in utility.
+input. On AgentDojo it takes the ASR from 0.117 to **0.022**; what is left is
+one slack task whose goal is a `get_webpage` fetch of the attacker's URL — a
+*read* with an external side effect, which no confidentiality rule sees. The
+price is utility without a human (0.412 vs 0.536); with one it is
+0.825. `RESULTS.md` carries every number.
 
 ## Why detection is not enough — our own numbers
 

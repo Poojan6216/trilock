@@ -21,7 +21,19 @@ Provenance that outlives the session, and the integrity policy.
 - **`integrity` policy** and the `session_untrusted` rule condition: escalate
   every external action after untrusted input, catching the two-leg integrity
   attacks that make up the residual AgentDojo ASR; measured as a fifth
-  configuration.
+  configuration: ASR 0.022 (oracle utility 0.412, 0.825 with an attentive human).
+
+### Fixed
+- The AgentDojo harness scored a call Trilock *refused* as if it had run:
+  `slack.injection_task_5` is judged from the trace of emitted tool calls, and
+  refused calls were in it. They no longer are. Headline strict/dataflow ASR
+  0.135 -> 0.123 from this alone; regression test pins it.
+
+### Changed
+- `policies/agentdojo/slack.yaml`: channel and member listings are untrusted
+  (their names are written by other workspace members, and that is where one
+  injection vector lives). Headline ASR 0.123 -> 0.117, integrity 0.033 -> 0.022;
+  slack utility falls 0.476 -> 0.333 (oracle) and the tables say so.
 - The red-team harness now models a persistent store honestly: a denied write
   leaves nothing to read back, and an exfil body must come from what the model
   actually read. The first version let a denied write be read back, which

@@ -133,6 +133,9 @@ def run_config(suite_name: str, config: str, ablation: Ablation, *, quiet: bool)
             "n": len(latencies),
         },
         "verdicts": dict(sorted(verdicts.items())),
+        # Which injection tasks the successes belong to, so the residual can be
+        # explained from the data rather than asserted (keys are "uid|iid").
+        "attack_successes_by_injection_task": _by_injection_task(attack_success),
     }
     if not quiet:
         h = out["with_attentive_human"]
@@ -143,6 +146,14 @@ def run_config(suite_name: str, config: str, ablation: Ablation, *, quiet: bool)
             f"atk={h['utility_under_attack']:.3f} ASR={h['targeted_asr']:.3f} | cases={len(attack_success)}"
         )
     return out
+
+
+def _by_injection_task(attack_success: dict[str, bool]) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for key, success in attack_success.items():
+        if success:
+            counts[key.split("|", 1)[1]] += 1
+    return dict(sorted(counts.items()))
 
 
 def _rate(results: dict[str, bool]) -> float:
@@ -287,6 +298,36 @@ def render_attacks_section() -> str:
     return "\n".join(lines) + "\n"
 
 
+def _integrity_residual(payload: dict[str, Any]) -> str:
+    """What still succeeds under `integrity`, named per suite from the recorded data.
+
+    The one residual we have seen is a *read with an external side effect*:
+    `slack.injection_task_3`'s ground truth is a single `get_webpage` fetch of the
+    attacker's URL. The policy classifies web fetches as reads - an outbound GET
+    to an attacker-chosen host is an egress the policy language can only close by
+    classifying the fetch tool `external`, which would escalate every page load
+    after untrusted input. That sentence is emitted only while the data says so.
+    """
+    parts = []
+    for r in payload["rows"]:
+        if r["config"] != "integrity" or r["ablation"] != "full":
+            continue
+        by_task = r.get("attack_successes_by_injection_task") or {}
+        if not by_task:
+            continue
+        listed = ", ".join(f"`{iid}` x{n}" for iid, n in by_task.items())
+        parts.append(f"{r['suite']}: {sum(by_task.values())}/{r['security_cases']} ({listed})")
+        if r["suite"] == "slack" and set(by_task) == {"injection_task_3"}:
+            parts[-1] += (
+                " - every one is the task whose ground truth is a single `get_webpage` fetch of the "
+                "attacker's URL: a *read* with an external side effect, allowed because the slack "
+                "policy classifies web fetches as reads"
+            )
+    if not parts:
+        return " Under `integrity` no injection task succeeds in any suite."
+    return " What remains under `integrity`, by suite - " + "; ".join(parts) + "."
+
+
 def _residual_note(payload: dict[str, Any]) -> str:
     """Explain the non-zero ASR under strict/dataflow from the recorded verdicts.
 
@@ -316,6 +357,7 @@ def _residual_note(payload: dict[str, Any]) -> str:
             f"ASR **{integrity['targeted_asr']:.3f}** at benign utility {integrity['benign_utility']:.3f} "
             f"(oracle) / {integrity['human_benign_utility']:.3f} (attentive human): that is the price of "
             "closing the integrity class, and it is a policy choice, not a code change."
+            + _integrity_residual(payload)
         )
     return (
         "The ASR that remains under `strict` and `dataflow` is **not** exfiltration slipping through. In every "

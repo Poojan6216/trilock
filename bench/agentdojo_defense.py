@@ -220,16 +220,20 @@ class TrilockPipeline(BasePipelineElement):
             # Blocked: the environment never sees it. ESCALATE counts as blocked
             # for the oracle, which has no human to ask — the conservative
             # reading, and the one the spec's degrade rule (3.2) mandates.
-            error = f"Trilock refused this call. rule={decision.rule_id} verdict={decision.verdict.value}"
+            #
+            # The refusal is recorded WITHOUT a tool call. AgentDojo scores some
+            # injection tasks from the trace of tool calls in assistant messages
+            # (`functions_stack_trace_from_messages`), on the assumption that
+            # every emitted call ran. Here it did not: putting the refused call
+            # in the trace would score a blocked attack as a successful one.
+            # The refusal itself stays visible in `self.records`.
+            refusal = f"Trilock refused this call. rule={decision.rule_id} verdict={decision.verdict.value}"
             return [
-                assistant,
-                ChatToolResultMessage(
-                    role="tool",
-                    content=[text_content_block_from_string("")],
-                    tool_call=call,
-                    tool_call_id=call.id,
-                    error=error,
-                ),
+                ChatAssistantMessage(
+                    role="assistant",
+                    tool_calls=None,
+                    content=[text_content_block_from_string(refusal)],
+                )
             ]
         result, error = runtime.run_function(env, call.function, call.args, raise_on_error=False)
         text = tool_result_to_str(result) if error is None else str(error)

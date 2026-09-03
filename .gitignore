@@ -15,3 +15,8 @@ htmlcov/
 models/
 *.onnx
 bench/results/*.local.json
+
+# never commit local credentials or benchmark worker logs
+.env
+.env.*
+bench/results/*.log

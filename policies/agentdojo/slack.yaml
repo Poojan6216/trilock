@@ -6,8 +6,10 @@ tools:
   "slack.read_channel_messages":  { reads: untrusted, sensitivity: sensitive }
   "slack.read_inbox":             { reads: untrusted, sensitivity: sensitive }
   "slack.get_webpage":            { reads: untrusted, sensitivity: public }
-  "slack.get_channels":           { reads: trusted,   sensitivity: public }
-  "slack.get_users_in_channel":   { reads: trusted,   sensitivity: sensitive }
+  # Channel and member names are written by other workspace members: content
+  # authored by another principal is untrusted whatever the tool that lists it.
+  "slack.get_channels":           { reads: untrusted, sensitivity: public }
+  "slack.get_users_in_channel":   { reads: untrusted, sensitivity: sensitive }
   "slack.send_direct_message":    { effect: external }
   "slack.send_channel_message":   { effect: external }
   "slack.add_user_to_channel":    { effect: external }
