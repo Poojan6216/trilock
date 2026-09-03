@@ -18,6 +18,8 @@ from typing import Any, Final
 import mcp_types as types
 from mcp.server import InitializationOptions, NotificationOptions, ServerRequestContext
 from mcp.server.lowlevel import Server
+from mcp.shared.exceptions import MCPError
+from mcp_types import INVALID_PARAMS
 
 from trilock import __version__, log
 from trilock.config import TrilockConfig
@@ -29,6 +31,17 @@ SERVER_NAME: Final[str] = "trilock"
 _log = log.get("proxy.server")
 
 Ctx = ServerRequestContext[None, Any]
+
+
+def _as_mcp_error(exc: Exception) -> MCPError:
+    """Turn a routing failure into a protocol error the client can render.
+
+    `tools/call` reports failure in-band, as an isError result the model reads.
+    `prompts/*` and `resources/*` have no such channel, so an unroutable name
+    must surface as a JSON-RPC error rather than an unhandled traceback that
+    takes the connection down.
+    """
+    return MCPError(INVALID_PARAMS, str(exc))
 
 
 def _error_result(message: str) -> types.CallToolResult:

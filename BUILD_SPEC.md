@@ -336,7 +336,7 @@ rules:
   `proxy/server.py` + `router.py`. Expose one MCP server. Aggregate `tools/list` from all upstreams, namespacing as `<server>.<tool>`. Route `tools/call` to the right upstream. Forward `resources/*`, `prompts/*` too. Preserve `_meta`, progress notifications, and cancellation in both directions.
   **Verify:** an MCP client sees the union of both fixture servers' tools with correct namespacing, and a call reaches the right one.
 
-- [ ] **0.5 — Passthrough fidelity test (Hard Rule 7)**
+- [x] **0.5 — Passthrough fidelity test (Hard Rule 7)**
   `proxy/passthrough.py`. With an empty policy, the proxy is transparent. Write a differential test: run a scripted sequence of ~30 MCP operations directly against a fixture server, then the same sequence through Trilock, and assert the responses are equal modulo namespacing and `_meta` routing fields.
   **Verify:** the differential test passes for both protocol revisions.
 
@@ -600,6 +600,7 @@ rules:
 [0.2] CLI (serve/check/replay/bench) + JSON logs on stderr. Stdout protected twice: SDK stdio_server claims fd 1, StdoutGuard logs any surviving Python-level write. Subprocess test parses every stdout line as JSON-RPC.
 [0.3] Supervised upstream pool (stdio + streamable HTTP), one task per upstream so connect/reconnect/teardown share a cancel scope. Exponential backoff with jitter, dead upstream isolated. Fixture servers negotiate 2026-07-28; liveness probe is tools/list, NOT ping — SEP-2577 removes ping in 2026-07-28 and using it reconnect-looped healthy servers (regression test added). Client-side response cache disabled so a stale tools/list cannot mask a rug-pull.
 [0.4] Router aggregates tools/prompts (namespaced <server>.<tool>, split on FIRST dot since SEP-986 allows dots in tool names) and routes resources by learned URI->owner table with deterministic probe fallback. Progress bridged via session.report_progress, NOT send_progress_notification — the token-based form silently drops progress on in-process and 2026-07-28 callers. Listings tolerate a dead upstream. Added docs_server fixture so resources/prompts/progress/cancellation are actually tested.
+[0.5] Differential passthrough test: 33 MCP ops run direct vs through a real 'trilock serve' subprocess, on BOTH 2025-11-25 and 2026-07-28. Found and fixed a real leak — the proxy forwarded the upstream's io.modelcontextprotocol/serverInfo stamp downstream, misdescribing the hop and disclosing upstream name/version. Only permitted difference left is the peer stamp naming trilock, which canonicalise() normalises to a marker while a separate test asserts it really says 'trilock' (no impersonation).
 ```
 
 ---

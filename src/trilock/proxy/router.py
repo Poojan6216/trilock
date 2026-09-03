@@ -77,6 +77,32 @@ def split_qualified(qualified: str) -> Route:
     return Route(server=server, name=name)
 
 
+_HOP_META_PREFIX: Final[str] = "io.modelcontextprotocol/"
+
+_ResultT = TypeVar("_ResultT", bound=types.Result)
+
+
+def strip_hop_meta(result: _ResultT) -> _ResultT:
+    """Drop the per-connection protocol metadata an upstream stamped on a result.
+
+    On 2026-07-28 the SDK stamps `io.modelcontextprotocol/serverInfo` into every
+    result. Forwarding it verbatim is wrong twice over: the downstream client's
+    peer is Trilock, not the upstream, so the stamp misdescribes the hop it
+    arrived on; and it leaks the upstream's name and version to a client that
+    was never connected to it. The downstream session stamps its own.
+
+    Only the result's top-level `_meta` is touched. `_meta` inside content
+    blocks belongs to the payload, and Trilock does not rewrite payloads.
+    """
+    meta = result.meta
+    if not meta:
+        return result
+    remaining = {k: v for k, v in meta.items() if not str(k).startswith(_HOP_META_PREFIX)}
+    if len(remaining) == len(meta):
+        return result
+    return result.model_copy(update={"meta": remaining or None})
+
+
 def strip_reserved_meta(meta: types.RequestParamsMeta | None) -> types.RequestParamsMeta | None:
     """Forward application `_meta` upstream, minus the entries the session owns.
 
@@ -92,7 +118,7 @@ def strip_reserved_meta(meta: types.RequestParamsMeta | None) -> types.RequestPa
         {
             key: value
             for key, value in meta.items()
-            if key != "progress_token" and not str(key).startswith("io.modelcontextprotocol/")
+            if key != "progress_token" and not str(key).startswith(_HOP_META_PREFIX)
         },
     )
     return forwarded or None
@@ -192,11 +218,13 @@ class Router:
     ) -> types.CallToolResult:
         """Execute a namespaced tool on its upstream."""
         upstream, name = self.resolve(qualified)
-        return await upstream.client().call_tool(
-            name,
-            arguments,
-            progress_callback=progress_callback,
-            meta=strip_reserved_meta(meta),
+        return strip_hop_meta(
+            await upstream.client().call_tool(
+                name,
+                arguments,
+                progress_callback=progress_callback,
+                meta=strip_reserved_meta(meta),
+            )
         )
 
     # -- prompts ---------------------------------------------------------
@@ -222,7 +250,9 @@ class Router:
         meta: types.RequestParamsMeta | None = None,
     ) -> types.GetPromptResult:
         upstream, name = self.resolve(qualified)
-        return await upstream.client().get_prompt(name, arguments, meta=strip_reserved_meta(meta))
+        return strip_hop_meta(
+            await upstream.client().get_prompt(name, arguments, meta=strip_reserved_meta(meta))
+        )
 
     # -- resources -------------------------------------------------------
 
@@ -278,7 +308,7 @@ class Router:
                 errors.append(f"{upstream.name}: {type(exc).__name__}: {exc}")
                 continue
             self._resource_owner[uri] = upstream.name
-            return result
+            return strip_hop_meta(result)
         raise RouteError(
             f"no upstream served resource {uri!r}" + (f" ({'; '.join(errors)})" if errors else "")
         )
