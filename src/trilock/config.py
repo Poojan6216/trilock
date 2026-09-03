@@ -77,8 +77,11 @@ class DetectorConfig(_Strict):
     timeout_ms: int = Field(default=150, gt=0, le=10_000)
     heuristics: bool = True
     promptguard: bool = False
-    """Off until ``trilock check --download-models`` has fetched the ONNX model."""
-    model_dir: Path = Path(STATE_DIRNAME) / "models"
+    """Off by default, and not only until the model is downloaded: on the
+    hardware it was measured on, a 4 KB document costs 250-500 ms against a
+    150 ms budget (see bench/results/detector_latency.json). Enable it knowing
+    that long inputs will time out and contribute nothing, which is safe."""
+    model_dir: Path = Path(STATE_DIRNAME) / "models" / "promptguard-22m"
 
 
 class PinConfig(_Strict):

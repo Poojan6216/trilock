@@ -88,10 +88,32 @@ def check(
             help="Connect to every upstream and accept the tool definitions as they are now.",
         ),
     ] = False,
+    download_models: Annotated[
+        bool,
+        typer.Option(
+            "--download-models",
+            help="Fetch the Prompt Guard 2 ONNX model once, verifying its pinned digest.",
+        ),
+    ] = False,
 ) -> None:
     """Validate configuration and policy, and print the resolved tool table."""
     log.configure(log_level)
     cfg = _load(config)
+    if download_models:
+        from trilock.detect import promptguard
+
+        typer.echo(f"downloading {promptguard.MODEL_REPO} into {cfg.detectors.model_dir} ...")
+        try:
+            for path in promptguard.download(cfg.detectors.model_dir):
+                typer.echo(f"  {path.name:28} {path.stat().st_size:>12,} bytes")
+        except Exception as exc:
+            typer.echo(f"trilock: model download failed: {exc}", err=True)
+            raise typer.Exit(6) from exc
+        typer.echo("verified. Enable with `detectors: {promptguard: true}` in trilock.yaml.")
+        typer.echo(
+            "note: on the reference machine a 4 KB document exceeds the 150 ms budget "
+            "and will time out (safely) - see bench/results/detector_latency.json."
+        )
     source = cfg.source_path or find_config()
     typer.echo(f"config: {source or '<defaults, no file found>'}")
     typer.echo(f"upstream servers: {len(cfg.servers)}")

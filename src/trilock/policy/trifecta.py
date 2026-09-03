@@ -104,6 +104,25 @@ class SessionState:
         )
         return [r.text for r in reports], reports
 
+    def attach_scores(self, scores: dict[str, float]) -> None:
+        """Join advisory detector scores onto the most recently recorded source.
+
+        Scores ride on the label (joined by per-detector maximum, so they only
+        ever go up) and surface in the engine's snapshot through the session
+        label. They are never a reason to allow anything (Hard Rule 1).
+        """
+        if not scores or not self.ledger.entries:
+            return
+        source, entry = next(reversed(self.ledger.entries.items()))
+        self.ledger.entries[source] = type(entry)(
+            source=entry.source,
+            content_hash=entry.content_hash,
+            label=entry.label.with_scores(scores),
+            ngrams=entry.ngrams,
+            exact_tokens=entry.exact_tokens,
+            length=entry.length,
+        )
+
     # -- egress ----------------------------------------------------------
 
     def trifecta(self, *, external: bool = False) -> TrifectaState:

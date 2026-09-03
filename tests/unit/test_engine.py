@@ -818,3 +818,55 @@ def test_an_unclassified_tool_is_never_allowed_outside_monitor(
     if session.classification is not None or policy.mode is Mode.MONITOR:
         return
     assert decide(call, session, policy).verdict is not Verdict.ALLOW
+
+
+# -- Hard Rule 1, machine-checked (task 4.4) ----------------------------------
+
+
+def _with_scores(session: SessionSnapshot, value: float | None) -> SessionSnapshot:
+    scores = {} if value is None else dict.fromkeys(("heuristics", "promptguard"), value)
+    return SessionSnapshot(
+        trifecta=session.trifecta,
+        attribution=session.attribution,
+        classification=session.classification,
+        session_label=session.session_label,
+        detector_scores=scores,
+        scope_violation=session.scope_violation,
+        normalisation_removed=session.normalisation_removed,
+    )
+
+
+def _strictness(verdict: Verdict) -> int:
+    return {Verdict.ALLOW: 0, Verdict.ESCALATE: 1, Verdict.DENY: 2}[verdict]
+
+
+@settings(max_examples=3000, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@given(call=calls, session=snapshots, policy=policies)
+def test_detector_scores_are_monotone_they_can_only_tighten(
+    call: ToolCall, session: SessionSnapshot, policy: Policy
+) -> None:
+    """Replacing every score with 0.0 is never stricter; with 1.0 never looser.
+
+    This is the machine-checkable form of Hard Rule 1: a detector score may
+    contribute to a DENY or raise an ALLOW to an ESCALATE, and may never be the
+    reason a call is permitted. If this ever fails, a classifier has become a
+    control, and *The Attacker Moves Second* says that classifier will be broken.
+    """
+    actual = decide(call, session, policy).verdict
+    zeroed = decide(call, _with_scores(session, 0.0), policy).verdict
+    maxed = decide(call, _with_scores(session, 1.0), policy).verdict
+    absent = decide(call, _with_scores(session, None), policy).verdict
+
+    assert _strictness(zeroed) <= _strictness(actual), (
+        "removing detector scores made a verdict stricter"
+    )
+    assert _strictness(maxed) >= _strictness(actual), "maxing detector scores made a verdict looser"
+    assert _strictness(absent) <= _strictness(actual), "a missing score was treated as evidence"
+    # And the guarantee itself never depends on a detector: with scores gone,
+    # three legs still never yield an ALLOW outside monitor mode.
+    if (
+        session.trifecta.legs == 3
+        and session.classification is not None
+        and policy.mode is not Mode.MONITOR
+    ):
+        assert absent is not Verdict.ALLOW or policy.rules == ()

@@ -29,6 +29,9 @@ import mcp_types as types
 from trilock import log
 from trilock.approval import ApprovalScope, ApprovalStore, mailbox_path
 from trilock.config import TrilockConfig
+from trilock.detect.base import Detector, merge_scores, run_detectors
+from trilock.detect.heuristics import HeuristicDetector
+from trilock.detect.promptguard import PromptGuardDetector, is_available
 from trilock.policy.decision import Decision, ToolCall, TrifectaState, Verdict
 from trilock.policy.engine import SessionSnapshot, decide
 from trilock.policy.model import Mode, Policy, ToolClass
@@ -36,7 +39,7 @@ from trilock.policy.scope import ScopeResult
 from trilock.policy.scope import check as check_scope
 from trilock.policy.trifecta import SessionRegistry, SessionState, is_external
 from trilock.taint.labels import new_call_id
-from trilock.taint.propagate import Attribution
+from trilock.taint.propagate import Attribution, walk_arguments
 from trilock.taint.store import LedgerStore, SessionKey
 
 _log = log.get("proxy.guard")
@@ -213,6 +216,47 @@ class Guard:
         )
         self.sessions = SessionRegistry(self.ledgers)
         self.approvals = ApprovalStore()
+        self.detectors: list[Detector] = self._build_detectors()
+
+    def _build_detectors(self) -> list[Detector]:
+        """Advisory detectors, per config. Never a control (Hard Rule 1).
+
+        Prompt Guard is added only when enabled *and* installed and verified; an
+        enabled-but-missing model is logged and skipped, never a startup error,
+        because the guarantee does not depend on it (Hard Rule 2).
+        """
+        cfg = self.config.detectors
+        if not cfg.enabled:
+            return []
+        tools = tuple(self.policy.tools) if self.policy is not None else ()
+        found: list[Detector] = []
+        if cfg.heuristics:
+            found.append(HeuristicDetector(tool_names=tools))
+        if cfg.promptguard:
+            if is_available(cfg.model_dir):
+                found.append(PromptGuardDetector(cfg.model_dir))
+            else:
+                _log.warning(
+                    "promptguard enabled but the model is not installed; skipping it",
+                    extra={
+                        "model_dir": str(cfg.model_dir),
+                        "fix": "trilock check --download-models",
+                    },
+                )
+        return found
+
+    async def detect(self, texts: list[str]) -> dict[str, float]:
+        """Score texts with every detector under the configured budget.
+
+        Returns only the scores that exist. A timeout or crash is logged by the
+        runner and simply absent here, which the engine treats as no evidence.
+        """
+        if not self.detectors or not texts:
+            return {}
+        outcomes = await run_detectors(
+            self.detectors, texts, timeout_ms=self.config.detectors.timeout_ms
+        )
+        return merge_scores(outcomes)
 
     @property
     def mode(self) -> Mode:
@@ -246,19 +290,30 @@ class Guard:
             scope=check_scope(classification, call.arguments, root=self.config.base_dir),
         )
 
-    def snapshot(self, ctx: CallContext) -> SessionSnapshot:
+    def snapshot(
+        self, ctx: CallContext, egress_scores: dict[str, float] | None = None
+    ) -> SessionSnapshot:
         """Freeze everything the engine may know about this call."""
+        session_label = ctx.session.ledger.session_label()
+        scores = dict(session_label.detector_scores)
+        for name, value in (egress_scores or {}).items():
+            scores[name] = max(scores.get(name, 0.0), value)
         return SessionSnapshot(
             trifecta=ctx.trifecta,
             attribution=ctx.attribution,
             classification=ctx.classification,
-            session_label=ctx.session.ledger.session_label(),
-            detector_scores=ctx.session.ledger.session_label().detector_scores,
+            session_label=session_label,
+            detector_scores=scores,
             scope_violation=ctx.scope.violated,
             normalisation_removed=sum(r.removed_chars for r in ctx.session.normalisations),
         )
 
-    def decide(self, ctx: CallContext) -> Decision:
+    async def egress_scores(self, ctx: CallContext) -> dict[str, float]:
+        """Score the outbound arguments. The exfiltration shapes live here."""
+        texts = [text for _, text in walk_arguments(ctx.call.arguments) if text]
+        return await self.detect(texts) if texts else {}
+
+    def decide(self, ctx: CallContext, egress_scores: dict[str, float] | None = None) -> Decision:
         """The verdict for this call. Returns ALLOW when there is no policy.
 
         With no policy Trilock is a passthrough (Hard Rule 7), and with a
@@ -283,7 +338,7 @@ class Guard:
                     "would be wrong; Trilock reports rather than enforcing on it",
                 ),
             )
-        decision = decide(ctx.call, self.snapshot(ctx), self.policy)
+        decision = decide(ctx.call, self.snapshot(ctx, egress_scores), self.policy)
         if decision.verdict is Verdict.ESCALATE:
             if self.approvals.redeem_offline(
                 ctx.session.key,
@@ -344,8 +399,8 @@ class Guard:
             tainted=bool(ctx.attribution.matches) or not ctx.attribution.complete,
         )
 
-    def ingest(self, ctx: CallContext, result: types.CallToolResult) -> types.CallToolResult:
-        """Normalise, label and record a tool result; return what the agent sees."""
+    async def ingest(self, ctx: CallContext, result: types.CallToolResult) -> types.CallToolResult:
+        """Normalise, label, score and record a tool result; return what the agent sees."""
         if result.is_error:
             # An error is the upstream's own message, not content that entered
             # the session. Labelling it would let a failed call set a leg.
@@ -355,9 +410,21 @@ class Guard:
         contents = [*texts, structured] if structured is not None else texts
         if not contents:
             return result
-        normalised, _reports = ctx.session.record_result(
+        normalised, reports = ctx.session.record_result(
             ctx.call.server, ctx.call.tool, ctx.call.call_id, contents, ctx.classification
         )
+        # Detectors see the *normalised* text, so a smuggled instruction is
+        # scored as the readable sentence it is, plus how much had to be
+        # stripped to make it readable.
+        removed = sum(r.removed_chars for r in reports)
+        scores = await self.detect(
+            [
+                f"{text}\n[{removed} hidden characters removed]" if removed else text
+                for text in normalised
+            ]
+        )
+        if scores:
+            ctx.session.attach_scores(scores)
         # Only the content blocks are substituted back; the structured payload
         # is fingerprinted but returned as the upstream produced it, because
         # rewriting a schema-validated object is not Unicode normalisation and

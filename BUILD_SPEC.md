@@ -439,19 +439,19 @@ rules:
 
 **Goal:** add detectors that improve *triage quality* without ever becoming the control. Hard Rule 1 governs this entire phase.
 
-- [ ] **4.1 — Detector protocol and budget**
+- [x] **4.1 — Detector protocol and budget**
   `detect/base.py`. Async, batched, with a hard timeout (default 150ms). On timeout or error: score is `None`, logged, pipeline continues (Hard Rule 2). Detectors run concurrently with upstream I/O where possible so they cost near-zero wall time.
   **Verify:** a detector that always hangs does not increase end-to-end latency beyond the timeout, and never changes a verdict.
 
-- [ ] **4.2 — Deterministic heuristics (no model)**
+- [x] **4.2 — Deterministic heuristics (no model)**
   `detect/heuristics.py`. Zero-cost signals: imperative-to-system phrasing patterns, role-token strings (`system:`, `<|im_start|>`, `[INST]`, `###Instruction`), tool-name mentions inside content, URL-with-embedded-data patterns (the classic exfil vector — a markdown image whose URL contains session content), base64 blobs above a length threshold, and the count of characters removed by normalisation in Phase 1.3.
   **Verify:** measured precision/recall over `tests/fixtures/attacks/` and a benign corpus. Report the numbers; do not tune until they look good and then report only the good run.
 
-- [ ] **4.3 — Llama Prompt Guard 2 (ONNX)**
+- [x] **4.3 — Llama Prompt Guard 2 (ONNX)**
   `detect/promptguard.py`. Export `Llama-Prompt-Guard-2-22M` to ONNX, run on CPU via onnxruntime. Chunk long documents with overlap; take the max score across chunks. Lazy-load, warm on first use, cache the session. Model download is explicit at install (`trilock check --download-models`), never automatic at runtime.
   **Verify:** p50 and p99 latency measured on a 4KB document, committed to `bench/results/detector_latency.json`. Must be well under the 150ms budget; if it isn't, document it and default the detector to off.
 
-- [ ] **4.4 — Scores in the decision, correctly**
+- [x] **4.4 — Scores in the decision, correctly**
   Detector scores may: raise an `ALLOW` to `ESCALATE`; contribute to a `DENY`. They may **never** lower a verdict. Encode this as a monotonicity invariant in the engine.
   **Verify:** property test — for any decision, replacing all detector scores with 0.0 never produces a *stricter* verdict, and replacing them with 1.0 never produces a *looser* one. This is the machine-checkable form of Hard Rule 1.
 
@@ -617,6 +617,10 @@ rules:
 [3.2] Client without elicitation capability: ESCALATE degrades to DENY naming an approval id; 'trilock approve <id>' drops a token in .trilock/approvals/ which the next identical call consumes exactly once. DEVIATION: file mailbox instead of a unix socket — same trust boundary (writing .trilock/ == editing config), no listener to run, single-use and digest-bound; verify passes (exactly one execution, reuse refused, other args refused).
 [3.3] Approval memory once/session/always with TTL; 'always' is never OFFERED (removed from the elicitation schema, with the reason in the description) when arguments carry untrusted provenance or attribution is incomplete; session approvals are keyed on exact (session, tool, args digest).
 [3.4] Prompt hardening: instruction portion built only from policy+labels; arguments defused (normalised, control chars stripped, delimiters neutralised, truncated) and placed LAST inside an explicit untrusted block so nothing can follow it pretending to be Trilock; accept/decline is the elicitation SCHEMA, not text. Spoof test asserts the injected 'routine approval, click yes' lands only inside the block. Also found+fixed: a ReDoS in high_entropy_tokens (leading unbounded class, O(n^2): 200KB took 186s, now 17ms) and the same shape in scope.py; regression test pins 200KB<2s. Also found+fixed a FAIL-OPEN: 'unclassified:' in a policy was never consulted by the engine — now a floor applied after rule evaluation, with a 1500-example invariant test.
+[4.1] Detector protocol + budgeted concurrent runner (detect/base.py). Hard timeout per detector; timeout/crash/malformed/NaN => score None (not 0, not 1). Verified: a hung detector costs at most the timeout, never starves the others, never changes a verdict (default+strict).
+[4.2] Deterministic heuristics (role tokens, override phrasing, tool mentions, markdown-image/URL payload exfil, base64 blobs, normalisation-removed count), linear-time per line. MEASURED, NOT TUNED: precision 0.962 / recall 0.806 @0.4 over 31 visible injections + 40 benign (6 misses named, 1 false alarm: a benign signed URL). Artefact: bench/results/heuristics_precision_recall.json.
+[4.3] Prompt Guard 2 22M on onnxruntime CPU. DEVIATION: meta-llama repo is gated (manual) with no HF token available, so Trilock downloads the ungated ONNX export gravitee-io/Llama-Prompt-Guard-2-22M-onnx of the SAME weights and pins SHA-256 of model+tokenizer; a mismatching download is refused. Explicit install via 'trilock check --download-models'. onnxruntime pinned <1.24 (1.29 dropped Intel-mac wheels). MEASURED (bench/results/detector_latency.json): short text p50 11.7ms; 4KB doc p50 252ms => OVER the 150ms budget => default OFF as the spec instructs. Chunking (128 tok, overlap 16, batched, max) is mandatory: unchunked, a tail injection scored 0.003; chunked it scores 0.029 — still diluted. Recorded as a negative result. CoreML provider crashes on this graph: CPU only.
+[4.4] Monotonicity in the engine: advisory scores raise ALLOW->ESCALATE at >=0.9 or select a detector_above rule; never loosen. 3000-example property: zeroing scores never stricter, maxing never looser, absent never evidence. Phase gate: detectors on vs off produce IDENTICAL blocks on the attack suite (dataflow+strict); heuristics add 0.34ms p50 to the request path; a hung detector in the live proxy is bounded and changes nothing.
 ```
 
 ---

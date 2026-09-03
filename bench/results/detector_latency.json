@@ -1,0 +1,62 @@
+{
+  "measured_at": "2026-09-03T02:49:23Z",
+  "commit": "38bec44",
+  "command": "uv run python bench/detector_latency.py --model-dir /private/tmp/claude-501/-Users-poojanpatel-Documents-Projects-Trilock/892b1c7c-2139-4e37-9e1d-6fa7567ce1a7/scratchpad/models/promptguard-22m --runs 40",
+  "budget_ms": 150,
+  "machine": {
+    "platform": "macOS-15.7.9-x86_64-i386-64bit",
+    "machine": "x86_64",
+    "processor": "i386",
+    "python": "3.12.13",
+    "cpu_count": 8
+  },
+  "inputs": {
+    "short_chars": 79,
+    "doc_chars": 3973
+  },
+  "heuristics": {
+    "short": {
+      "p50_ms": 0.42,
+      "p95_ms": 0.59,
+      "p99_ms": 0.73,
+      "max_ms": 0.73,
+      "n": 40
+    },
+    "doc_4k": {
+      "p50_ms": 0.85,
+      "p95_ms": 1.23,
+      "p99_ms": 1.49,
+      "max_ms": 1.49,
+      "n": 40
+    }
+  },
+  "promptguard": {
+    "model": "meta-llama/Llama-Prompt-Guard-2-22M via gravitee-io ONNX export, quantised",
+    "onnxruntime": "1.23.2",
+    "provider": "CPUExecutionProvider",
+    "threads": 4,
+    "short": {
+      "p50_ms": 11.73,
+      "p95_ms": 16.58,
+      "p99_ms": 22.47,
+      "max_ms": 22.47,
+      "n": 40
+    },
+    "doc_4k": {
+      "p50_ms": 252.16,
+      "p95_ms": 271.42,
+      "p99_ms": 271.42,
+      "max_ms": 271.42,
+      "n": 10
+    },
+    "scores": {
+      "short_injection": 0.9989,
+      "doc_4k_tail_injection": 0.0292,
+      "benign": 0.0007
+    },
+    "within_budget": {
+      "short_p99": true,
+      "doc_4k_p50": false
+    }
+  }
+}

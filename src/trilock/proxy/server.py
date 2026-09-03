@@ -228,7 +228,7 @@ def build_server(router: Router, guard: Guard | None = None) -> Server[None]:
     ) -> types.CallToolResult | types.InputRequiredResult:
         call_ctx = guard.prepare(ctx.session, params.name, params.arguments) if guard else None
         if guard is not None and call_ctx is not None:
-            decision = guard.decide(call_ctx)
+            decision = guard.decide(call_ctx, await guard.egress_scores(call_ctx))
             guard.observe(call_ctx, decision)
             if decision.verdict is Verdict.ESCALATE:
                 held = _handle_escalation(ctx, guard, call_ctx, decision, params)
@@ -253,7 +253,7 @@ def build_server(router: Router, guard: Guard | None = None) -> Server[None]:
             _log.warning("tools/call not routed", extra={"tool": params.name, "error": str(exc)})
             return _error_result(str(exc))
         if guard is not None and call_ctx is not None:
-            result = guard.ingest(call_ctx, result)
+            result = await guard.ingest(call_ctx, result)
         return result
 
     async def on_list_prompts(

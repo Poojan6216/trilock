@@ -1,0 +1,26 @@
+{
+  "detector": "heuristics",
+  "threshold": 0.4,
+  "corpora": {
+    "injections": 31,
+    "benign": 40
+  },
+  "tp": 25,
+  "fp": 1,
+  "fn": 6,
+  "tn": 39,
+  "precision": 0.9615,
+  "recall": 0.8065,
+  "missed": [
+    "base64_wrapped_instruction",
+    "tool_name_mention",
+    "note_to_ai",
+    "french_injection",
+    "spanish_injection",
+    "subtle_no_keywords"
+  ],
+  "false_alarms": [
+    "long_signed_url"
+  ],
+  "command": "uv run pytest tests/unit/test_heuristics.py"
+}
