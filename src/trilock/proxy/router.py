@@ -84,10 +84,8 @@ def split_qualified(qualified: str) -> Route:
 
 _HOP_META_PREFIX: Final[str] = "io.modelcontextprotocol/"
 
-_ResultT = TypeVar("_ResultT", bound=types.Result)
 
-
-def strip_hop_meta(result: _ResultT) -> _ResultT:
+def strip_hop_meta[ResultT: types.Result](result: ResultT) -> ResultT:
     """Drop the per-connection protocol metadata an upstream stamped on a result.
 
     On 2026-07-28 the SDK stamps `io.modelcontextprotocol/serverInfo` into every
