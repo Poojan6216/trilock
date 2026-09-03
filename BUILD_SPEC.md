@@ -353,11 +353,11 @@ rules:
 
 **Goal:** know where every piece of content in the session came from. No decisions yet, just bookkeeping.
 
-- [ ] **1.1 — Taint lattice**
+- [x] **1.1 — Taint lattice**
   `taint/labels.py` per §7. `join` must be associative, commutative, idempotent, with `TRUSTED/PUBLIC` as identity.
   **Verify:** hypothesis property tests for all three algebraic laws over randomly generated labels. 1000+ examples.
 
-- [ ] **1.2 — Session provenance ledger**
+- [x] **1.2 — Session provenance ledger**
   `taint/store.py`. Per-session append-only ledger of `(SourceId, content_hash, label, extracted_ngrams)`. Bounded memory: cap at N sources (default 500) with LRU eviction, and **evicting a source must widen taint, never narrow it** — once evicted, fall back to session-level conservative assumptions. Sessions are keyed by MCP session id where the protocol has one, and by client connection identity in stateless `2026-07-28` mode (document this precisely in `docs/threat-model.md`; it is the trickiest part of the design).
   **Verify:** test asserts eviction is conservative — a call denied with a full ledger is still denied after eviction.
 
@@ -602,6 +602,8 @@ rules:
 [0.4] Router aggregates tools/prompts (namespaced <server>.<tool>, split on FIRST dot since SEP-986 allows dots in tool names) and routes resources by learned URI->owner table with deterministic probe fallback. Progress bridged via session.report_progress, NOT send_progress_notification — the token-based form silently drops progress on in-process and 2026-07-28 callers. Listings tolerate a dead upstream. Added docs_server fixture so resources/prompts/progress/cancellation are actually tested.
 [0.5] Differential passthrough test: 33 MCP ops run direct vs through a real 'trilock serve' subprocess, on BOTH 2025-11-25 and 2026-07-28. Found and fixed a real leak — the proxy forwarded the upstream's io.modelcontextprotocol/serverInfo stamp downstream, misdescribing the hop and disclosing upstream name/version. Only permitted difference left is the peer stamp naming trilock, which canonicalise() normalises to a marker while a separate test asserts it really says 'trilock' (no impersonation).
 [0.6] Tool definition pinning in proxy/pins.py (extra module beyond the spec's file list — cleaner than bloating router.py). Digest covers name+description+inputSchema PLUS title/outputSchema/annotations, a documented superset: annotations carry readOnlyHint/destructiveHint a reader may act on. strict mode both withholds from tools/list AND refuses the call — hiding alone is not enough for a client that listed before the change. 'trilock check --repin' accepts changes; check exits 4 on violation, 5 on a dead upstream. Prior art: airlock-agent ships this already; credited, not claimed.
+[1.1] Taint lattice with join as least-upper-bound toward danger. detector_scores join by per-key max and are excluded from __hash__ (advisory, not identity). Labels freeze their score mapping so a caller cannot mutate one through a retained alias. 8 hypothesis properties x1200 examples: associativity, commutativity, idempotence, identity, monotonicity, score-max, TOP absorption, widened() dominance.
+[1.2] Session ledger, bounded LRU. Eviction folds the evicted label into a permanent evicted_floor AND latches attribution_complete=False, so forgetting can never launder: the flood-to-evict attack is a regression test. Sessions keyed by SessionKey(kind, value) recording WHICH identity assumption was used (mcp-session vs connection) so the audit log shows what a decision rested on.
 ```
 
 ---
