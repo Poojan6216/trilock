@@ -332,7 +332,7 @@ rules:
   `proxy/upstream.py`. Connect to N upstream MCP servers from config. Support **stdio** (subprocess) and **streamable HTTP**. Handle `2026-07-28` and `2025-11-25`. Reconnect with backoff. Never crash the proxy when one upstream dies — mark it unavailable and keep serving the rest.
   **Verify:** integration test spins up two trivial stdio MCP servers (write them in `tests/fixtures/servers/`) and asserts both connect and respond to `tools/list`.
 
-- [ ] **0.4 — Downstream server and tool aggregation**
+- [x] **0.4 — Downstream server and tool aggregation**
   `proxy/server.py` + `router.py`. Expose one MCP server. Aggregate `tools/list` from all upstreams, namespacing as `<server>.<tool>`. Route `tools/call` to the right upstream. Forward `resources/*`, `prompts/*` too. Preserve `_meta`, progress notifications, and cancellation in both directions.
   **Verify:** an MCP client sees the union of both fixture servers' tools with correct namespacing, and a call reaches the right one.
 
@@ -599,6 +599,7 @@ rules:
 [0.1] Scaffolded uv/hatchling project, ruff+mypy --strict, pytest layout, Apache-2.0, pre-commit. Python pinned to 3.12.13 via uv (system python is 3.11).
 [0.2] CLI (serve/check/replay/bench) + JSON logs on stderr. Stdout protected twice: SDK stdio_server claims fd 1, StdoutGuard logs any surviving Python-level write. Subprocess test parses every stdout line as JSON-RPC.
 [0.3] Supervised upstream pool (stdio + streamable HTTP), one task per upstream so connect/reconnect/teardown share a cancel scope. Exponential backoff with jitter, dead upstream isolated. Fixture servers negotiate 2026-07-28; liveness probe is tools/list, NOT ping — SEP-2577 removes ping in 2026-07-28 and using it reconnect-looped healthy servers (regression test added). Client-side response cache disabled so a stale tools/list cannot mask a rug-pull.
+[0.4] Router aggregates tools/prompts (namespaced <server>.<tool>, split on FIRST dot since SEP-986 allows dots in tool names) and routes resources by learned URI->owner table with deterministic probe fallback. Progress bridged via session.report_progress, NOT send_progress_notification — the token-based form silently drops progress on in-process and 2026-07-28 callers. Listings tolerate a dead upstream. Added docs_server fixture so resources/prompts/progress/cancellation are actually tested.
 ```
 
 ---
