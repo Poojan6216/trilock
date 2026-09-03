@@ -57,9 +57,13 @@ no host to check or reaches a resource the allowlist was never about, so it is
 refused rather than waved through for lack of a hostname.
 """
 
-_URL = re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://[^\s<>\"']+")
-_BARE_SCHEME = re.compile(r"\b(?:data|javascript|file|blob):[^\s<>\"']+", re.IGNORECASE)
-_EMAIL = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
+_URL = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]{1,15}://[^\s<>\"']+")
+_BARE_SCHEME = re.compile(r"(?:data|javascript|file|blob):[^\s<>\"']+", re.IGNORECASE)
+# Emails are found per whitespace-split token with an anchored match, never by
+# scanning the whole text with an unbounded leading class: that shape is O(n^2)
+# on a long run with no `@` (see the ReDoS note in taint/propagate.py).
+_EMAIL_TOKEN = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_TOKEN_SPLIT = re.compile(r"[\s\"'`<>()\[\]{}|,;]+")
 _PATH_LIKE = re.compile(r"^[^\s]*(?:/|\\)[^\s]*$|^\.{1,2}$|^~[/\\]")
 """A value that is a path *in its entirety*.
 
@@ -340,7 +344,10 @@ def _candidates(text: str, kinds: set[ScopeKind]) -> list[tuple[str, ScopeKind]]
         # Schemes with no host still have to be refused rather than ignored.
         found.extend((m.group(0), ScopeKind.HOST) for m in _BARE_SCHEME.finditer(text))
     if ScopeKind.EMAIL in kinds:
-        found.extend((m.group(0), ScopeKind.EMAIL) for m in _EMAIL.finditer(text))
+        for raw in _TOKEN_SPLIT.split(text):
+            token = raw.strip(".,:;!?")
+            if "@" in token and len(token) <= 320 and _EMAIL_TOKEN.fullmatch(token):
+                found.append((token, ScopeKind.EMAIL))
     if ScopeKind.PATH in kinds and _PATH_LIKE.match(text.strip()):
         # Only a value that is a path *in its entirety*. Scanning prose for
         # path-shaped substrings would refuse an email that happens to mention

@@ -40,7 +40,7 @@ class SessionSnapshot:
     reaching content it has no business seeing.
     """
 
-    trifecta: TrifectaState = TrifectaState()
+    trifecta: TrifectaState = field(default_factory=TrifectaState)
     attribution: Attribution = field(default_factory=Attribution)
     classification: ToolClass | None = None
     session_label: TaintLabel = IDENTITY
@@ -62,7 +62,8 @@ def decide(call: ToolCall, session: SessionSnapshot, policy: Policy) -> Decision
     forever. This is what makes `trilock replay` possible.
     """
     base = _first_matching_rule(call, session, policy)
-    adjusted = _apply_detectors(base, session, policy)
+    floored = _apply_unclassified_floor(base, session, policy)
+    adjusted = _apply_detectors(floored, session, policy)
     if policy.mode is Mode.MONITOR:
         return _to_monitor(adjusted)
     return adjusted
@@ -105,9 +106,7 @@ def _matches(when: RuleCondition, call: ToolCall, session: SessionSnapshot, poli
         return False
     if when.session_touched is not None and not _session_touched(when.session_touched, session):
         return False
-    if when.detector_above is not None and not _detector_above(when.detector_above, session):
-        return False
-    return True
+    return when.detector_above is None or _detector_above(when.detector_above, session)
 
 
 def _effect(session: SessionSnapshot) -> Effect:
@@ -157,6 +156,38 @@ def _detector_above(thresholds: Mapping[str, float], session: SessionSnapshot) -
         if score is None or score < threshold:
             return False
     return True
+
+
+def _apply_unclassified_floor(
+    decision: Decision, session: SessionSnapshot, policy: Policy
+) -> Decision:
+    """An unclassified tool can never come out looser than the policy's floor.
+
+    Without this, `unclassified:` would be decoration: a policy that set it to
+    `escalate` but whose rules happened to end in a broad `allow` would let an
+    unclassified tool through, and the field that exists to prevent exactly
+    that would have had no effect. The floor is applied after rule evaluation
+    so a rule may still make an unclassified tool *stricter*, never looser.
+    """
+    if not session.unclassified:
+        return decision
+    floor = policy.unclassified_verdict
+    tightened = stricter(decision.verdict, floor)
+    if tightened is decision.verdict:
+        return decision
+    return Decision(
+        verdict=tightened,
+        rule_id=decision.rule_id,
+        reasons=(
+            *decision.reasons,
+            f"no policy entry classifies this tool, and the policy's floor for an "
+            f"unclassified tool is {floor.value}. A tool nobody classified is a tool "
+            f"nobody has reasoned about.",
+        ),
+        trifecta=decision.trifecta,
+        tainted_args=decision.tainted_args,
+        label=decision.label,
+    )
 
 
 # -- detector adjustment (Hard Rule 1) ---------------------------------------

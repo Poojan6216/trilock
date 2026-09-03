@@ -11,6 +11,7 @@ does not itself model.
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, Final
@@ -18,14 +19,22 @@ from typing import Any, Final
 import mcp_types as types
 from mcp.server import InitializationOptions, NotificationOptions, ServerRequestContext
 from mcp.server.lowlevel import Server
+from mcp.server.request_state import RequestStateBoundary, RequestStateSecurity
 from mcp.shared.exceptions import MCPError
 from mcp_types import INVALID_PARAMS
 
 from trilock import __version__, log
+from trilock.approval import (
+    APPROVAL_KEY,
+    PENDING_TTL,
+    ApprovalScope,
+    approval_schema,
+    render_prompt,
+)
 from trilock.config import TrilockConfig
-from trilock.policy.decision import Decision
+from trilock.policy.decision import Decision, Verdict
 from trilock.policy.model import load_policy
-from trilock.proxy.guard import Guard
+from trilock.proxy.guard import CallContext, Guard
 from trilock.proxy.pins import PinStore
 from trilock.proxy.router import RouteError, Router
 from trilock.proxy.upstream import UpstreamUnavailableError, open_pool
@@ -58,6 +67,88 @@ def _error_result(message: str) -> types.CallToolResult:
     return types.CallToolResult(
         content=[types.TextContent(type="text", text=message)], is_error=True
     )
+
+
+def _scope_of(value: object) -> ApprovalScope:
+    """The approval scope a client asked for, defaulting to the safest one.
+
+    Anything unrecognised becomes `once`: a malformed answer must not widen an
+    approval.
+    """
+    try:
+        return ApprovalScope(str(value))
+    except ValueError:
+        return ApprovalScope.ONCE
+
+
+def _client_can_elicit(ctx: Ctx) -> bool:
+    """Whether this client can put a question to a human.
+
+    On 2026-07-28 the elicitation rides inside the result, so the capability is
+    what says whether anyone will read it. A client that cannot elicit gets a
+    deny with instructions, never a silent allow.
+    """
+    capabilities = getattr(ctx.session, "client_capabilities", None)
+    return getattr(capabilities, "elicitation", None) is not None
+
+
+def _undeliverable(decision: Decision, approval_id: str) -> Decision:
+    return Decision(
+        verdict=Verdict.DENY,
+        rule_id=decision.rule_id,
+        reasons=(
+            *decision.reasons,
+            "this call needs a human decision, and this client cannot present one. "
+            f"A person on this machine can approve exactly this call once by running "
+            f"'trilock approve {approval_id}', after which the same call will go through; "
+            "or use a client that supports elicitation. An unanswerable question is "
+            "never treated as a yes.",
+        ),
+        trifecta=decision.trifecta,
+        tainted_args=decision.tainted_args,
+        label=decision.label,
+    )
+
+
+def _declined(decision: Decision) -> Decision:
+    return Decision(
+        verdict=Verdict.DENY,
+        rule_id=decision.rule_id,
+        reasons=("a human was asked to approve this call and declined.", *decision.reasons),
+        trifecta=decision.trifecta,
+        tainted_args=decision.tainted_args,
+        label=decision.label,
+    )
+
+
+def _replayed(decision: Decision) -> Decision:
+    return Decision(
+        verdict=Verdict.DENY,
+        rule_id=decision.rule_id,
+        reasons=(
+            "the approval token presented with this call was forged, expired, altered, "
+            "or already used. Approval tokens are single use.",
+        ),
+        trifecta=decision.trifecta,
+        tainted_args=decision.tainted_args,
+        label=decision.label,
+    )
+
+
+def _consume(
+    guard: Guard, call_ctx: CallContext, params: types.CallToolRequestParams
+) -> object | None:
+    """Redeem the nonce carried in the (already unsealed) request state."""
+    raw = params.request_state
+    if not raw:
+        return None
+    try:
+        nonce = json.loads(raw).get("nonce")
+    except (ValueError, AttributeError):
+        return None
+    if not isinstance(nonce, str):
+        return None
+    return guard.approvals.consume(nonce, call_ctx.session.key, params.name, params.arguments)
 
 
 def _refusal(decision: Decision) -> types.CallToolResult:
@@ -105,6 +196,26 @@ def _progress_bridge(ctx: Ctx) -> Any:
     return on_progress
 
 
+def _elicit(
+    decision: Decision, tool: str, arguments: dict[str, Any], *, offer_always: bool
+) -> types.ElicitRequest:
+    """The approval request embedded in an `input_required` result."""
+    return types.ElicitRequest(
+        params=types.ElicitRequestFormParams(
+            mode="form",
+            message=render_prompt(decision, tool, arguments),
+            requested_schema=approval_schema(offer_always=offer_always),
+        )
+    )
+
+
+def _answer(params: types.CallToolRequestParams) -> types.ElicitResult | None:
+    """The human's answer to a held call, if this request carries one."""
+    responses = params.input_responses or {}
+    answer = responses.get(APPROVAL_KEY)
+    return answer if isinstance(answer, types.ElicitResult) else None
+
+
 def build_server(router: Router, guard: Guard | None = None) -> Server[None]:
     """Construct the downstream-facing MCP server over `router`."""
     server: Server[None] = Server(SERVER_NAME, version=__version__)
@@ -112,12 +223,18 @@ def build_server(router: Router, guard: Guard | None = None) -> Server[None]:
     async def on_list_tools(_ctx: Ctx, _p: types.PaginatedRequestParams) -> types.ListToolsResult:
         return await router.list_tools()
 
-    async def on_call_tool(ctx: Ctx, params: types.CallToolRequestParams) -> types.CallToolResult:
+    async def on_call_tool(
+        ctx: Ctx, params: types.CallToolRequestParams
+    ) -> types.CallToolResult | types.InputRequiredResult:
         call_ctx = guard.prepare(ctx.session, params.name, params.arguments) if guard else None
         if guard is not None and call_ctx is not None:
             decision = guard.decide(call_ctx)
             guard.observe(call_ctx, decision)
-            if decision.blocked:
+            if decision.verdict is Verdict.ESCALATE:
+                held = _handle_escalation(ctx, guard, call_ctx, decision, params)
+                if held is not None:
+                    return held
+            elif decision.blocked:
                 # The upstream is never reached. Blocking after the fact would
                 # mean the side effect already happened.
                 _log.warning(
@@ -164,6 +281,69 @@ def build_server(router: Router, guard: Guard | None = None) -> Server[None]:
     ) -> types.ReadResourceResult:
         return await router.read_resource(str(params.uri), meta=ctx.meta)
 
+    def _handle_escalation(
+        ctx: Ctx,
+        guard: Guard,
+        call_ctx: CallContext,
+        decision: Decision,
+        params: types.CallToolRequestParams,
+    ) -> types.CallToolResult | types.InputRequiredResult | None:
+        """Drive one round of human approval.
+
+        Returns the result to send back, or ``None`` to let the call proceed
+        because a human said yes.
+        """
+        answer = _answer(params)
+        if answer is None:
+            if not _client_can_elicit(ctx):
+                # Task 3.2: a client that cannot ask a human gets a DENY that
+                # explains the out-of-band path. ESCALATE never degrades to
+                # ALLOW — that would turn an unanswerable question into a yes.
+                approval_id = guard.approvals.issue_offline(
+                    call_ctx.session.key, params.name, params.arguments, decision
+                )
+                _log.warning(
+                    "client cannot elicit; escalation degraded to deny",
+                    extra={
+                        "tool": params.name,
+                        "rule_id": decision.rule_id,
+                        "approval_id": approval_id,
+                    },
+                )
+                return _refusal(_undeliverable(decision, approval_id))
+            nonce = guard.approvals.issue(
+                call_ctx.session.key, params.name, params.arguments, decision
+            )
+            return types.InputRequiredResult(
+                input_requests={
+                    APPROVAL_KEY: _elicit(
+                        decision,
+                        params.name,
+                        params.arguments or {},
+                        offer_always=guard.offer_always(call_ctx),
+                    )
+                },
+                request_state=json.dumps({"nonce": nonce}),
+            )
+
+        # The client came back with an answer. The transport has already
+        # verified the sealed state's signature, TTL and binding to this exact
+        # call; the nonce below is what makes it single use.
+        held = _consume(guard, call_ctx, params)
+        if held is None:
+            return _refusal(_replayed(decision))
+        if answer.action != "accept" or not (answer.content or {}).get("approve"):
+            _log.info("human declined", extra={"tool": params.name, "action": answer.action})
+            return _refusal(_declined(decision))
+        raw_scope = (answer.content or {}).get("scope")
+        scope = _scope_of(raw_scope)
+        guard.record_approval(call_ctx, scope)
+        _log.info(
+            "human approved",
+            extra={"tool": params.name, "scope": scope.value, "rule_id": decision.rule_id},
+        )
+        return None
+
     server.add_request_handler("tools/list", types.PaginatedRequestParams, on_list_tools)
     server.add_request_handler("tools/call", types.CallToolRequestParams, on_call_tool)
     server.add_request_handler("prompts/list", types.PaginatedRequestParams, on_list_prompts)
@@ -173,6 +353,17 @@ def build_server(router: Router, guard: Guard | None = None) -> Server[None]:
         "resources/templates/list", types.PaginatedRequestParams, on_list_resource_templates
     )
     server.add_request_handler("resources/read", types.ReadResourceRequestParams, on_read_resource)
+
+    # The multi-round-trip boundary seals every `requestState` we mint under a
+    # per-process AES-256-GCM key and binds it to the method, target and
+    # argument digest with a TTL, refusing anything forged, expired, altered or
+    # addressed to another call. Trilock's own single-use nonce sits inside
+    # that envelope and is what stops the *same* call being replayed.
+    server.middleware.append(
+        RequestStateBoundary(
+            RequestStateSecurity.ephemeral(ttl=PENDING_TTL), default_audience=SERVER_NAME
+        )
+    )
     return server
 
 

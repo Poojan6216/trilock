@@ -33,18 +33,27 @@ MIN_ENTROPY_TOKEN_LEN: Final[int] = 12
 
 _WORD = re.compile(r"[0-9a-z]+", re.ASCII)
 
-_HIGH_ENTROPY_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
-    re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"),  # email addresses
-    re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE),  # URLs
-    re.compile(r"\b[0-9a-f]{16,}\b", re.IGNORECASE),  # hex ids, hashes
-    re.compile(r"\b[A-Za-z0-9+/]{24,}={0,2}\b"),  # base64-ish blobs
-    re.compile(r"\b[A-Za-z0-9_.:-]{12,}\b"),  # candidate secret shapes, filtered below
-)
-"""Shapes worth matching exactly rather than by n-gram.
+# ReDoS note, learned the hard way. A pattern that begins with an unbounded
+# character class — `[\w.+-]+@...` — and is run over the *whole* text will, on
+# a long run that never contains the `@`, try every start position and scan to
+# the end from each: O(n^2). 200 KB of "A" took three minutes. So nothing here
+# scans unbounded input with an unbounded leading class. URLs are found by their
+# literal `://` prefix (a linear scan), and everything else is tested per
+# whitespace-split token with an anchored fullmatch, which is linear in the
+# token and cannot cross token boundaries. `test_propagate.py` holds the
+# regression: 200 KB of one character through every scanner in under a second.
 
-A single email address or URL is shorter than an n-gram window but is precisely
-the payload an exfiltration carries, so it gets its own exact-match path.
-"""
+_URL_RE: Final[re.Pattern[str]] = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]{1,15}://[^\s<>\"']+")
+_TOKEN_SPLIT: Final[re.Pattern[str]] = re.compile(r"[\s\"'`<>()\[\]{}|,;]+")
+_EMAIL_TOKEN: Final[re.Pattern[str]] = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_HEX_TOKEN: Final[re.Pattern[str]] = re.compile(r"[0-9a-fA-F]{16,}")
+_BASE64_TOKEN: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9+/]{24,}={0,2}")
+_SECRET_CLASS: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9_.:-]{12,}")
+_KV_SPLIT: Final[re.Pattern[str]] = re.compile(r"=(?=[A-Za-z0-9+/])")
+_TRIM_CHARS: Final[str] = ".,:;!?'\"`()[]{}<>"
+MAX_TOKEN_CHARS: Final[int] = 512
+"""Longer than any credential. A 200 KB run with no delimiter is padding, not a
+key; the first 512 characters are enough to identify it if it is one."""
 
 
 def tokenise(text: str) -> list[str]:
@@ -90,11 +99,11 @@ def extract_ngrams(
 def _is_secret_shaped(token: str) -> bool:
     """Whether a long token looks like a credential or identifier, not a word.
 
-    Requires digits *and* letters, plus a separator or mixed case. That keeps
-    `hunter2-STAGING-9f31` and drops `internationalization`, which matters
-    because a false positive here costs an escalation a human resolves, while
-    a plain long word matching everything would cost all of `dataflow` mode's
-    utility advantage over `strict`.
+    Requires digits *and* letters, plus a separator, mixed case, or 16+
+    unbroken characters. That keeps `hunter2-STAGING-9f31` and AWS key ids and
+    drops `internationalization`, which matters because a false positive here
+    costs an escalation a human resolves, while a plain long word matching
+    everything would cost all of `dataflow` mode's utility advantage.
     """
     has_digit = any(c.isdigit() for c in token)
     has_alpha = any(c.isalpha() for c in token)
@@ -102,8 +111,6 @@ def _is_secret_shaped(token: str) -> bool:
         return False
     has_separator = any(c in "-_.:" for c in token)
     mixed_case = token != token.lower() and token != token.upper()
-    # A long unbroken alphanumeric run with digits in it is key-shaped even
-    # without a separator or case change - AWS access key ids look like that.
     return has_separator or mixed_case or len(token) >= 16
 
 
@@ -111,17 +118,28 @@ def high_entropy_tokens(text: str) -> frozenset[str]:
     """Identifier-shaped substrings worth matching exactly.
 
     Emails, URLs and hex digests match on shape alone. Everything else has to
-    look like a secret rather than like a long word.
+    look like a secret rather than like a long word. Linear in the input: see
+    the ReDoS note above.
     """
     found: set[str] = set()
-    for index, pattern in enumerate(_HIGH_ENTROPY_PATTERNS):
-        for match in pattern.finditer(text):
-            token = match.group(0)
-            if len(token) < MIN_ENTROPY_TOKEN_LEN:
-                continue
-            is_candidate_class = index == len(_HIGH_ENTROPY_PATTERNS) - 1
-            if is_candidate_class and not _is_secret_shaped(token):
-                continue
+    for match in _URL_RE.finditer(text):
+        url = match.group(0).rstrip(".,;)]}>\"'")
+        if len(url) >= MIN_ENTROPY_TOKEN_LEN:
+            found.add(url)
+    for raw in _TOKEN_SPLIT.split(text):
+        token = raw.strip(_TRIM_CHARS)
+        if len(token) < MIN_ENTROPY_TOKEN_LEN:
+            continue
+        if len(token) > MAX_TOKEN_CHARS:
+            token = token[:MAX_TOKEN_CHARS]
+        if "@" in token:
+            if _EMAIL_TOKEN.fullmatch(token):
+                found.add(token)
+            continue
+        if _HEX_TOKEN.fullmatch(token) or _BASE64_TOKEN.fullmatch(token):
+            found.add(token)
+            continue
+        if _SECRET_CLASS.fullmatch(token) and _is_secret_shaped(token):
             found.add(token)
     return frozenset(found)
 
@@ -188,8 +206,6 @@ class Attribution:
         }
 
 
-_BASE64_BLOB = re.compile(r"[A-Za-z0-9+/]{24,}={0,2}")
-
 DEFAULT_MATCH_THRESHOLD: Final[float] = 0.15
 """Fraction of an argument's n-grams that must match one source to attribute it.
 
@@ -220,20 +236,28 @@ def decode_base64_blobs(text: str) -> list[str]:
     adaptive attack, measured in Phase 6 rather than papered over here.
     """
     decoded: list[str] = []
-    for match in _BASE64_BLOB.finditer(text):
-        blob = match.group(0)
-        padded = blob + "=" * (-len(blob) % 4)
-        try:
-            raw = base64.b64decode(padded, validate=True)
-        except (ValueError, binascii.Error):
-            continue
-        try:
-            candidate = raw.decode("utf-8")
-        except UnicodeDecodeError:
-            continue
-        if candidate.isprintable() or "\n" in candidate:
-            decoded.append(candidate)
+    for raw in _TOKEN_SPLIT.split(text):
+        # `key=<blob>`: a `=` followed by a base64 character is a separator, not
+        # padding (padding is trailing), so split there too.
+        for part in _KV_SPLIT.split(raw.strip(_TRIM_CHARS)):
+            blob = part.strip(_TRIM_CHARS)
+            if len(blob) < 24 or not _BASE64_TOKEN.fullmatch(blob):
+                continue
+            decoded.extend(_decode_one(blob))
     return decoded
+
+
+def _decode_one(blob: str) -> list[str]:
+    padded = blob + "=" * (-len(blob) % 4)
+    try:
+        raw = base64.b64decode(padded, validate=True)
+    except (ValueError, binascii.Error):
+        return []
+    try:
+        candidate = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return []
+    return [candidate] if candidate.isprintable() or "\n" in candidate else []
 
 
 def attribute(

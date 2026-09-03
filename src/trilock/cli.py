@@ -17,6 +17,7 @@ from typing import Annotated
 import typer
 
 from trilock import __version__, log
+from trilock.approval import drop_approval
 from trilock.config import ConfigError, TrilockConfig, find_config, load_config
 from trilock.policy.model import Policy, PolicyError, load_policy
 
@@ -129,9 +130,8 @@ def _print_tool_table(policy: Policy, tools: list[str]) -> None:
     typer.echo("-" * 84)
     for tool, cls in policy.resolved_table(tools):
         if cls is None:
-            typer.echo(
-                f"{tool:32} {'-':10} {'-':12} {'-':9} <unclassified -> {policy.unclassified_verdict.value}>"
-            )
+            floor = policy.unclassified_verdict.value
+            typer.echo(f"{tool:32} {'-':10} {'-':12} {'-':9} <unclassified -> {floor}>")
             continue
         reads = cls.reads.value if cls.reads else "-"
         scope = ", ".join(cls.scope) if cls.scope else "-"
@@ -174,6 +174,26 @@ async def _inspect_upstreams(cfg: TrilockConfig, policy: Policy | None, *, repin
             typer.echo(f"unavailable upstreams: {', '.join(down)}", err=True)
             return 5
         return 0
+
+
+@app.command()
+def approve(
+    approval_id: Annotated[str, typer.Argument(help="The id printed in the tool error.")],
+    config: ConfigOpt = None,
+) -> None:
+    """Approve, once, a call that Trilock held because the client could not ask you.
+
+    Drops a token in the state directory. The running proxy consumes it on the
+    next identical call and refuses the one after.
+    """
+    log.configure("WARNING")
+    cfg = _load(config)
+    try:
+        token = drop_approval(cfg.state_dir, approval_id)
+    except ValueError as exc:
+        typer.echo(f"trilock: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"approved once: {approval_id}  ({token})")
 
 
 @app.command()

@@ -27,6 +27,7 @@ from weakref import WeakKeyDictionary
 import mcp_types as types
 
 from trilock import log
+from trilock.approval import ApprovalScope, ApprovalStore, mailbox_path
 from trilock.config import TrilockConfig
 from trilock.policy.decision import Decision, ToolCall, TrifectaState, Verdict
 from trilock.policy.engine import SessionSnapshot, decide
@@ -211,6 +212,7 @@ class Guard:
             max_ngrams_per_source=config.ledger.max_ngrams_per_source,
         )
         self.sessions = SessionRegistry(self.ledgers)
+        self.approvals = ApprovalStore()
 
     @property
     def mode(self) -> Mode:
@@ -281,7 +283,66 @@ class Guard:
                     "would be wrong; Trilock reports rather than enforcing on it",
                 ),
             )
-        return decide(ctx.call, self.snapshot(ctx), self.policy)
+        decision = decide(ctx.call, self.snapshot(ctx), self.policy)
+        if decision.verdict is Verdict.ESCALATE:
+            if self.approvals.redeem_offline(
+                ctx.session.key,
+                ctx.call.tool,
+                ctx.call.arguments,
+                mailbox_path(self.config.state_dir),
+            ):
+                return Decision(
+                    verdict=Verdict.ALLOW,
+                    rule_id=decision.rule_id,
+                    reasons=(
+                        "a human approved this exact call out of band with 'trilock approve'",
+                        *decision.reasons,
+                    ),
+                    trifecta=decision.trifecta,
+                    tainted_args=decision.tainted_args,
+                    label=decision.label,
+                )
+            remembered = self.approvals.recall(ctx.session.key, ctx.call.tool, ctx.call.arguments)
+            if remembered is not None:
+                _log.info(
+                    "escalation satisfied by a standing approval",
+                    extra={
+                        "tool": ctx.call.tool,
+                        "scope": remembered.scope.value,
+                        "rule_id": decision.rule_id,
+                    },
+                )
+                return Decision(
+                    verdict=Verdict.ALLOW,
+                    rule_id=decision.rule_id,
+                    reasons=(
+                        f"a human approved this exact call earlier in this session "
+                        f"(scope: {remembered.scope.value})",
+                        *decision.reasons,
+                    ),
+                    trifecta=decision.trifecta,
+                    tainted_args=decision.tainted_args,
+                    label=decision.label,
+                )
+        return decision
+
+    def offer_always(self, ctx: CallContext) -> bool:
+        """Whether a standing 'always' approval may be offered for this call.
+
+        Never for arguments carrying untrusted provenance: an approval that
+        remembers itself is the wrong answer to a call built from
+        attacker-derived content.
+        """
+        return not ctx.attribution.matches and ctx.attribution.complete
+
+    def record_approval(self, ctx: CallContext, scope: ApprovalScope) -> None:
+        self.approvals.remember(
+            ctx.session.key,
+            ctx.call.tool,
+            ctx.call.arguments,
+            scope,
+            tainted=bool(ctx.attribution.matches) or not ctx.attribution.complete,
+        )
 
     def ingest(self, ctx: CallContext, result: types.CallToolResult) -> types.CallToolResult:
         """Normalise, label and record a tool result; return what the agent sees."""

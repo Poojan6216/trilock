@@ -66,7 +66,6 @@ class SessionState:
         whose provenance nobody knows.
         """
         reports = [normalize(text) for text in contents]
-        report = reports[0] if reports else normalize("")
         combined = "\n".join(r.text for r in reports)
         untrusted = classification is None or classification.yields_untrusted
         sensitive = classification is not None and classification.yields_sensitive

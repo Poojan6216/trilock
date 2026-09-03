@@ -17,7 +17,7 @@ from hypothesis import strategies as st
 
 from trilock.policy.decision import ToolCall, TrifectaState, Verdict
 from trilock.policy.engine import DEFAULT_RULE_ID, SessionSnapshot, decide
-from trilock.policy.model import Effect, Policy, ToolClass, load_policy, parse_policy
+from trilock.policy.model import Effect, Mode, Policy, ToolClass, load_policy, parse_policy
 from trilock.taint.labels import IDENTITY, TOP, Sensitivity, SourceId, TaintLabel, TrustLevel
 from trilock.taint.propagate import ArgumentMatch, Attribution
 
@@ -756,3 +756,65 @@ def _write_golden() -> None:
     GOLDEN.write_text(
         json.dumps(_golden_payload(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+
+
+# -- the unclassified floor ---------------------------------------------------
+
+
+def test_the_unclassified_floor_applies_even_when_no_rule_mentions_it() -> None:
+    """Regression: `unclassified:` must be a control, not decoration.
+
+    A policy that sets `unclassified: escalate` but whose rules end in a broad
+    `allow` was letting unclassified tools straight through — the field that
+    exists to prevent exactly that had no effect on the decision at all.
+    """
+    policy = parse_policy(
+        {
+            "unclassified": "escalate",
+            "rules": [{"id": "rest", "when": {"trifecta_legs": 0}, "then": "allow"}],
+        }
+    )
+    classified = decide(READ, snap(classification=INERT), policy)
+    assert classified.verdict is Verdict.ALLOW
+
+    unknown = decide(ToolCall(tool="weird.thing"), snap(classification=None), policy)
+    assert unknown.verdict is Verdict.ESCALATE
+    assert unknown.rule_id == "rest"
+    assert any("nobody has reasoned about" in r for r in unknown.reasons)
+
+
+def test_the_floor_only_tightens() -> None:
+    """A rule may make an unclassified tool stricter than the floor."""
+    policy = parse_policy(
+        {
+            "unclassified": "escalate",
+            "rules": [{"id": "hard_no", "when": {"unclassified": True}, "then": "deny"}],
+        }
+    )
+    assert decide(ToolCall(tool="x.y"), snap(classification=None), policy).verdict is Verdict.DENY
+
+
+def test_the_floor_defaults_by_mode_when_unset() -> None:
+    strict = parse_policy(
+        {"mode": "strict", "rules": [{"id": "rest", "when": {"trifecta_legs": 0}, "then": "allow"}]}
+    )
+    assert decide(ToolCall(tool="x.y"), snap(classification=None), strict).verdict is Verdict.DENY
+
+    flow = parse_policy(
+        {
+            "mode": "dataflow",
+            "rules": [{"id": "rest", "when": {"trifecta_legs": 0}, "then": "allow"}],
+        }
+    )
+    assert decide(ToolCall(tool="x.y"), snap(classification=None), flow).verdict is Verdict.ESCALATE
+
+
+@settings(max_examples=1500, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@given(call=calls, session=snapshots, policy=policies)
+def test_an_unclassified_tool_is_never_allowed_outside_monitor(
+    call: ToolCall, session: SessionSnapshot, policy: Policy
+) -> None:
+    """The invariant the floor exists to guarantee."""
+    if session.classification is not None or policy.mode is Mode.MONITOR:
+        return
+    assert decide(call, session, policy).verdict is not Verdict.ALLOW

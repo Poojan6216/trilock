@@ -234,3 +234,37 @@ def test_attribution_does_not_overmatch_across_unrelated_sources() -> None:
     )
     result = attribute(SOURCE_TEXT[:150], led)
     assert result.sources == frozenset({a.source})
+
+
+# -- ReDoS regression ----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "filler", ["A", "a", "1", "-", "."], ids=["upper", "lower", "digit", "dash", "dot"]
+)
+def test_text_scanners_are_linear_in_the_input(filler: str) -> None:
+    """200 KB of one character through every scanner, in well under a second.
+
+    The email pattern used to begin with an unbounded character class and run
+    over the whole text; on a long run with no `@` it backtracked O(n^2) and a
+    200 KB argument took three minutes to attribute. Every scanner is now
+    per-token with an anchored match, and this pins that.
+    """
+    import time
+
+    from trilock.policy.model import Effect, ToolClass
+    from trilock.policy.scope import check
+    from trilock.taint.normalize import normalize
+
+    big = filler * 200_000
+    led = ledger_with_source()
+    started = time.perf_counter()
+    high_entropy_tokens(big)
+    decode_base64_blobs(big)
+    attribute({"body": big}, led)
+    normalize(big)
+    check(
+        ToolClass(effect=Effect.EXTERNAL, scope=("@example.com", "api.example.com")), {"body": big}
+    )
+    elapsed = time.perf_counter() - started
+    assert elapsed < 2.0, f"text scanning took {elapsed:.1f}s on 200 KB: something is superlinear"

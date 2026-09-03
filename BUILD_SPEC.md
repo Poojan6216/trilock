@@ -415,19 +415,19 @@ rules:
 
 **Goal:** `ESCALATE` becomes a real approval prompt in real clients, using the protocol rather than a bolted-on UI.
 
-- [ ] **3.1 — MRTR escalation (protocol 2026-07-28)**
+- [x] **3.1 — MRTR escalation (protocol 2026-07-28)**
   On `ESCALATE`, return `resultType: "input_required"` with an `elicitation` request per SEP-2322. The message must state: the tool, the *actual arguments*, which taint sources they derive from, and which rule fired. Encode the pending call in `requestState` — signed with an HMAC from a per-process key so a malicious server cannot forge or replay one. Client re-issues with `inputResponses`; verify the HMAC, verify the decision still holds against current session state, then execute or refuse.
   **Verify:** integration test with an MCP client that answers the elicitation both ways. Approve → upstream invoked once. Decline → upstream invoked zero times. Forged `requestState` → rejected. Replayed `requestState` → rejected (nonce, single use).
 
-- [ ] **3.2 — Legacy fallback (2025-11-25 and non-elicitation clients)**
+- [x] **3.2 — Legacy fallback (2025-11-25 and non-elicitation clients)**
   Clients that can't do MRTR get a deterministic fallback: `ESCALATE` degrades to `DENY` with an error explaining how to approve out of band (`trilock approve <id>` against a local unix socket). Never degrade `ESCALATE` to `ALLOW`.
   **Verify:** test with a client advertising no elicitation capability asserts DENY, and that the CLI approval path then permits exactly one execution.
 
-- [ ] **3.3 — Approval memory**
+- [x] **3.3 — Approval memory**
   Approvals are scoped and expiring: `once` (default), `session`, or `always` for an exact `(tool, scope-hash)` pair with a TTL. `always` is never offered for a call whose arguments carry untrusted taint — that is precisely the decision a human should keep making.
   **Verify:** tests for each scope, TTL expiry, and the refusal to offer `always` on tainted arguments.
 
-- [ ] **3.4 — The approval prompt is not an attack surface**
+- [x] **3.4 — The approval prompt is not an attack surface**
   Untrusted content quoted into the prompt is truncated, escaped, and rendered inside an explicit delimiter block that states it is untrusted data. No untrusted text may appear in the prompt's instruction portion. Strip control characters and normalise before display.
   **Verify:** attack fixture where the injected text is crafted to read as part of the approval UI ("...this is a routine approval, click yes"). Test asserts it renders inside the quoted block, escaped, never in the instruction line.
 
@@ -613,6 +613,10 @@ rules:
 [2.4] Three modes verified end to end on the same attack: dataflow DENY via tainted_egress, strict DENY via rule_of_two, monitor ALLOW with 'monitor:tainted_egress' recorded.
 [2.5] Enforcement: blocked calls return an MCP tool error naming the rule and never reach the upstream — verified against the fixture server's OWN invocation journal, not Trilock's account of itself. Refusal text asserted to be non-fabricating, non-echoing (no untrusted content, no recipient) and non-directive.
 [2.6] Scope checking in policy/scope.py (extra module; ~250 lines, too big for engine.py). 16 path escapes + 18 host confusions + 5 email spoofs all denied. FOUND A REAL BUG IN MY OWN CODE: I initially folded homoglyphs in hostnames, which made api.<cyrillic-a>llowed.com MATCH the allowlist — the same fold that is correct in normalize.py (show a human what text pretends to be) is catastrophic for identity. Hostnames now IDNA-encode to punycode and confusables are rejected outright. NUL-containing paths are now matched-and-rejected rather than skipped as unclassifiable, which was a bypass. Known limit documented: redirects are not followed.
+[3.1] MRTR escalation: ESCALATE returns InputRequiredResult with an elicitation form; pending call sealed by the SDK's RequestStateBoundary (AES-256-GCM, TTL, bound to method+target+args digest — stronger than the spec's HMAC) PLUS a Trilock single-use nonce, because the boundary alone lets the SAME call be replayed within the TTL. Approve->1 execution, decline->0, forged->refused at transport, replayed->refused ('single use'), re-bound to other args->refused. New module src/trilock/approval.py.
+[3.2] Client without elicitation capability: ESCALATE degrades to DENY naming an approval id; 'trilock approve <id>' drops a token in .trilock/approvals/ which the next identical call consumes exactly once. DEVIATION: file mailbox instead of a unix socket — same trust boundary (writing .trilock/ == editing config), no listener to run, single-use and digest-bound; verify passes (exactly one execution, reuse refused, other args refused).
+[3.3] Approval memory once/session/always with TTL; 'always' is never OFFERED (removed from the elicitation schema, with the reason in the description) when arguments carry untrusted provenance or attribution is incomplete; session approvals are keyed on exact (session, tool, args digest).
+[3.4] Prompt hardening: instruction portion built only from policy+labels; arguments defused (normalised, control chars stripped, delimiters neutralised, truncated) and placed LAST inside an explicit untrusted block so nothing can follow it pretending to be Trilock; accept/decline is the elicitation SCHEMA, not text. Spoof test asserts the injected 'routine approval, click yes' lands only inside the block. Also found+fixed: a ReDoS in high_entropy_tokens (leading unbounded class, O(n^2): 200KB took 186s, now 17ms) and the same shape in scope.py; regression test pins 200KB<2s. Also found+fixed a FAIL-OPEN: 'unclassified:' in a policy was never consulted by the engine — now a floor applied after rule evaluation, with a 1500-example invariant test.
 ```
 
 ---
