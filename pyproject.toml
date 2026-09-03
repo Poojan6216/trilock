@@ -39,8 +39,9 @@ perplexity = ["torch>=2.2,<2.3", "transformers>=4.44,<4.50", "matplotlib>=3.9"]
 trilock = "trilock.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/trilock/mcp-trilock"
-Source = "https://github.com/trilock/mcp-trilock"
+Homepage = "https://github.com/Poojan6216/trilock"
+Source = "https://github.com/Poojan6216/trilock"
+Issues = "https://github.com/Poojan6216/trilock/issues"
 
 [dependency-groups]
 # `uv run` syncs the default groups on every invocation and removes anything

@@ -691,7 +691,7 @@ rules:
 
 - **How to install and try it locally:**
   ```bash
-  git clone <this repo> && cd Trilock
+  git clone https://github.com/Poojan6216/trilock.git && cd trilock
   uv sync                              # or: uv pip install dist/mcp_trilock-0.1.0-py3-none-any.whl
   uv run pytest -q                     # 486 pass, 3 skip (model-backed)
   uv run python bench/demo.py          # the section 2 attack, blocked, transcribed to docs/demo.md
