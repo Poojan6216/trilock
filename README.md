@@ -1,5 +1,7 @@
 # Trilock
 
+[![PyPI](https://img.shields.io/pypi/v/mcp-trilock?label=PyPI)](https://pypi.org/project/mcp-trilock/) [![CI](https://github.com/Poojan6216/trilock/actions/workflows/ci.yml/badge.svg)](https://github.com/Poojan6216/trilock/actions/workflows/ci.yml) [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](pyproject.toml) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE) [![Benchmark](https://img.shields.io/badge/AgentDojo_ASR-0.625_%E2%86%92_0.117-informational)](RESULTS.md)
+
 **A drop-in MCP proxy that makes the lethal trifecta structurally impossible — and publishes the benchmark, and the attacks that beat it.**
 
 Trilock does not prevent prompt injection. Nothing does. It assumes the injection
