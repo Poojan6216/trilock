@@ -1,0 +1,1228 @@
+[
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "sensitive",
+        "sources": [
+          "mail.search#0"
+        ],
+        "trust": "untrusted"
+      },
+      "reasons": [
+        "rule 'tainted_egress' matched 'mail.send'",
+        "this call would send content derived from untrusted input, out of a session that has touched private data. That is the exfiltration, whether or not the model meant it.",
+        "session holds 3 of 3 trifecta legs: untrusted input, sensitive data, external action",
+        "arguments derived from untrusted sources: $.body"
+      ],
+      "rule_id": "tainted_egress",
+      "tainted_args": [
+        "$.body"
+      ],
+      "trifecta": {
+        "external_action": true,
+        "legs": 3,
+        "sensitive_access": true,
+        "untrusted_input": true
+      },
+      "verdict": "deny"
+    },
+    "name": "demo attack: tainted egress from a sensitive session",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "sensitive",
+        "sources": [
+          "mail.search#0"
+        ],
+        "trust": "untrusted"
+      },
+      "reasons": [
+        "rule 'rule_of_two' matched 'mail.send'",
+        "this session holds all three legs of the lethal trifecta. In strict mode the third leg is refused outright rather than put to a human, because a human asked often enough eventually says yes.",
+        "session holds 3 of 3 trifecta legs: untrusted input, sensitive data, external action",
+        "arguments derived from untrusted sources: $.body"
+      ],
+      "rule_id": "rule_of_two",
+      "tainted_args": [
+        "$.body"
+      ],
+      "trifecta": {
+        "external_action": true,
+        "legs": 3,
+        "sensitive_access": true,
+        "untrusted_input": true
+      },
+      "verdict": "deny"
+    },
+    "name": "demo attack in strict: refused by rule of two, not attribution",
+    "policy": "strict:scope_violation,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "sensitive",
+        "sources": [
+          "mail.search#0"
+        ],
+        "trust": "untrusted"
+      },
+      "reasons": [
+        "monitor mode: this call would have been DENY by rule 'tainted_egress', and was allowed because nothing is enforced in this mode.",
+        "rule 'tainted_egress' matched 'mail.send'",
+        "this call would send content derived from untrusted input, out of a session that has touched private data. That is the exfiltration, whether or not the model meant it.",
+        "session holds 3 of 3 trifecta legs: untrusted input, sensitive data, external action",
+        "arguments derived from untrusted sources: $.body"
+      ],
+      "rule_id": "monitor:tainted_egress",
+      "tainted_args": [
+        "$.body"
+      ],
+      "trifecta": {
+        "external_action": true,
+        "legs": 3,
+        "sensitive_access": true,
+        "untrusted_input": true
+      },
+      "verdict": "allow"
+    },
+    "name": "demo attack in monitor: allowed but recorded",
+    "policy": "monitor:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "sensitive",
+        "sources": [],
+        "trust": "untrusted"
+      },
+      "reasons": [
+        "rule 'rule_of_two' matched 'mail.send'",
+        "this session holds all three legs of the lethal trifecta. Meta's Agents Rule of Two says an agent in this state must not act autonomously.",
+        "session holds 3 of 3 trifecta legs: untrusted input, sensitive data, external action"
+      ],
+      "rule_id": "rule_of_two",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": true,
+        "legs": 3,
+        "sensitive_access": true,
+        "untrusted_input": true
+      },
+      "verdict": "escalate"
+    },
+    "name": "three legs but arguments provably clean: dataflow escalates, not denies",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "sensitive",
+        "sources": [],
+        "trust": "untrusted"
+      },
+      "reasons": [
+        "rule 'rule_of_two' matched 'mail.send'",
+        "this session holds all three legs of the lethal trifecta. In strict mode the third leg is refused outright rather than put to a human, because a human asked often enough eventually says yes.",
+        "session holds 3 of 3 trifecta legs: untrusted input, sensitive data, external action"
+      ],
+      "rule_id": "rule_of_two",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": true,
+        "legs": 3,
+        "sensitive_access": true,
+        "untrusted_input": true
+      },
+      "verdict": "deny"
+    },
+    "name": "three legs, clean arguments, strict: still refused",
+    "policy": "strict:scope_violation,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "sensitive",
+        "sources": [],
+        "trust": "untrusted"
+      },
+      "reasons": [
+        "rule 'tainted_egress' matched 'mail.send'",
+        "this call would send content derived from untrusted input, out of a session that has touched private data. That is the exfiltration, whether or not the model meant it.",
+        "session holds 3 of 3 trifecta legs: untrusted input, sensitive data, external action",
+        "the provenance ledger has evicted sources, so arguments are treated conservatively rather than assumed clean"
+      ],
+      "rule_id": "tainted_egress",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": true,
+        "legs": 3,
+        "sensitive_access": true,
+        "untrusted_input": true
+      },
+      "verdict": "deny"
+    },
+    "name": "three legs, incomplete attribution: treated as tainted",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [
+          "mail.search#0"
+        ],
+        "trust": "untrusted"
+      },
+      "reasons": [
+        "rule 'fewer_than_three_legs' matched 'mail.send'",
+        "any two legs of the trifecta are safe; it is the third that is fatal",
+        "session holds 2 of 3 trifecta legs: untrusted input, external action",
+        "arguments derived from untrusted sources: $.body"
+      ],
+      "rule_id": "fewer_than_three_legs",
+      "tainted_args": [
+        "$.body"
+      ],
+      "trifecta": {
+        "external_action": true,
+        "legs": 2,
+        "sensitive_access": false,
+        "untrusted_input": true
+      },
+      "verdict": "allow"
+    },
+    "name": "untrusted + external, no sensitive data: two legs, allowed",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'fewer_than_three_legs' matched 'mail.send'",
+        "any two legs of the trifecta are safe; it is the third that is fatal",
+        "session holds 2 of 3 trifecta legs: sensitive data, external action"
+      ],
+      "rule_id": "fewer_than_three_legs",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": true,
+        "legs": 2,
+        "sensitive_access": true,
+        "untrusted_input": false
+      },
+      "verdict": "allow"
+    },
+    "name": "sensitive + external, no untrusted input: two legs, allowed",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "sensitive",
+        "sources": [],
+        "trust": "untrusted"
+      },
+      "reasons": [
+        "rule 'fewer_than_three_legs' matched 'mail.search'",
+        "any two legs of the trifecta are safe; it is the third that is fatal",
+        "session holds 2 of 3 trifecta legs: untrusted input, sensitive data"
+      ],
+      "rule_id": "fewer_than_three_legs",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 2,
+        "sensitive_access": true,
+        "untrusted_input": true
+      },
+      "verdict": "allow"
+    },
+    "name": "untrusted + sensitive, no external action: two legs, allowed",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.search"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'fewer_than_three_legs' matched 'mail.send'",
+        "any two legs of the trifecta are safe; it is the third that is fatal",
+        "session holds 2 of 3 trifecta legs: untrusted input, external action"
+      ],
+      "rule_id": "fewer_than_three_legs",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": true,
+        "legs": 2,
+        "sensitive_access": false,
+        "untrusted_input": true
+      },
+      "verdict": "allow"
+    },
+    "name": "two legs in strict is still allowed",
+    "policy": "strict:scope_violation,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'fewer_than_three_legs' matched 'mail.send'",
+        "any two legs of the trifecta are safe; it is the third that is fatal",
+        "session holds 1 of 3 trifecta legs: external action"
+      ],
+      "rule_id": "fewer_than_three_legs",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": true,
+        "legs": 1,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "allow"
+    },
+    "name": "one leg: external only",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'fewer_than_three_legs' matched 'mail.search'",
+        "any two legs of the trifecta are safe; it is the third that is fatal",
+        "session holds 1 of 3 trifecta legs: untrusted input"
+      ],
+      "rule_id": "fewer_than_three_legs",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 1,
+        "sensitive_access": false,
+        "untrusted_input": true
+      },
+      "verdict": "allow"
+    },
+    "name": "one leg: untrusted only",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.search"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'fewer_than_three_legs' matched 'mail.search'",
+        "any two legs of the trifecta are safe; it is the third that is fatal",
+        "session holds 1 of 3 trifecta legs: sensitive data"
+      ],
+      "rule_id": "fewer_than_three_legs",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 1,
+        "sensitive_access": true,
+        "untrusted_input": false
+      },
+      "verdict": "allow"
+    },
+    "name": "one leg: sensitive only",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.search"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'fewer_than_three_legs' matched 'mail.search'",
+        "any two legs of the trifecta are safe; it is the third that is fatal"
+      ],
+      "rule_id": "fewer_than_three_legs",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "allow"
+    },
+    "name": "no legs at all",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.search"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'fewer_than_three_legs' matched 'mail.search'",
+        "any two legs of the trifecta are safe; it is the third that is fatal"
+      ],
+      "rule_id": "fewer_than_three_legs",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "allow"
+    },
+    "name": "no legs, strict",
+    "policy": "strict:scope_violation,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.search"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'scope_violation' matched 'mail.send'",
+        "an external action was asked to act outside the scope its policy declares",
+        "session holds 1 of 3 trifecta legs: external action",
+        "the call falls outside the scope its policy declares"
+      ],
+      "rule_id": "scope_violation",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": true,
+        "legs": 1,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "deny"
+    },
+    "name": "scope violation outranks everything",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'scope_violation' matched 'mail.send'",
+        "an external action was asked to act outside the scope its policy declares",
+        "the call falls outside the scope its policy declares"
+      ],
+      "rule_id": "scope_violation",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "deny"
+    },
+    "name": "scope violation with zero other legs is still a deny",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "sensitive",
+        "sources": [],
+        "trust": "untrusted"
+      },
+      "reasons": [
+        "rule 'scope_violation' matched 'mail.send'",
+        "an external action was asked to act outside the scope its policy declares",
+        "session holds 3 of 3 trifecta legs: untrusted input, sensitive data, external action",
+        "the call falls outside the scope its policy declares"
+      ],
+      "rule_id": "scope_violation",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": true,
+        "legs": 3,
+        "sensitive_access": true,
+        "untrusted_input": true
+      },
+      "verdict": "deny"
+    },
+    "name": "scope violation in strict",
+    "policy": "strict:scope_violation,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "monitor mode: this call would have been DENY by rule 'scope_violation', and was allowed because nothing is enforced in this mode.",
+        "rule 'scope_violation' matched 'mail.send'",
+        "an external action was asked to act outside the scope its policy declares",
+        "the call falls outside the scope its policy declares"
+      ],
+      "rule_id": "monitor:scope_violation",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "allow"
+    },
+    "name": "scope violation in monitor is recorded, not enforced",
+    "policy": "monitor:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'unclassified_tool' matched 'weird.thing'",
+        "no policy entry classifies this tool, so what it does is unknown"
+      ],
+      "rule_id": "unclassified_tool",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "escalate"
+    },
+    "name": "unclassified tool escalates in dataflow",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "weird.thing"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'unclassified_tool' matched 'weird.thing'",
+        "no policy entry classifies this tool, so what it does is unknown"
+      ],
+      "rule_id": "unclassified_tool",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "deny"
+    },
+    "name": "unclassified tool is denied in strict",
+    "policy": "strict:scope_violation,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "weird.thing"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "sensitive",
+        "sources": [],
+        "trust": "untrusted"
+      },
+      "reasons": [
+        "rule 'rule_of_two' matched 'weird.thing'",
+        "this session holds all three legs of the lethal trifecta. Meta's Agents Rule of Two says an agent in this state must not act autonomously.",
+        "session holds 3 of 3 trifecta legs: untrusted input, sensitive data, external action"
+      ],
+      "rule_id": "rule_of_two",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": true,
+        "legs": 3,
+        "sensitive_access": true,
+        "untrusted_input": true
+      },
+      "verdict": "escalate"
+    },
+    "name": "unclassified tool with three legs: rule of two fires first",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "weird.thing"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "monitor mode: this call would have been ESCALATE by rule 'unclassified_tool', and was allowed because nothing is enforced in this mode.",
+        "rule 'unclassified_tool' matched 'weird.thing'",
+        "no policy entry classifies this tool, so what it does is unknown"
+      ],
+      "rule_id": "monitor:unclassified_tool",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "allow"
+    },
+    "name": "unclassified tool in monitor",
+    "policy": "monitor:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "weird.thing"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [
+          "mail.search#0"
+        ],
+        "trust": "untrusted"
+      },
+      "reasons": [
+        "rule 'fewer_than_three_legs' matched 'mail.send'",
+        "any two legs of the trifecta are safe; it is the third that is fatal",
+        "session holds 2 of 3 trifecta legs: untrusted input, external action",
+        "arguments derived from untrusted sources: $.body"
+      ],
+      "rule_id": "fewer_than_three_legs",
+      "tainted_args": [
+        "$.body"
+      ],
+      "trifecta": {
+        "external_action": true,
+        "legs": 2,
+        "sensitive_access": false,
+        "untrusted_input": true
+      },
+      "verdict": "allow"
+    },
+    "name": "external + tainted args but session never touched sensitive data",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "sensitive",
+        "sources": [
+          "mail.search#0"
+        ],
+        "trust": "untrusted"
+      },
+      "reasons": [
+        "rule 'fewer_than_three_legs' matched 'mail.search'",
+        "any two legs of the trifecta are safe; it is the third that is fatal",
+        "session holds 2 of 3 trifecta legs: untrusted input, sensitive data",
+        "arguments derived from untrusted sources: $.body"
+      ],
+      "rule_id": "fewer_than_three_legs",
+      "tainted_args": [
+        "$.body"
+      ],
+      "trifecta": {
+        "external_action": false,
+        "legs": 2,
+        "sensitive_access": true,
+        "untrusted_input": true
+      },
+      "verdict": "allow"
+    },
+    "name": "sensitive session + tainted args but the call is not external",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.search"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "no rule matched this call, and the terminal rule is deny. A policy that cannot decide refuses (Hard Rule 2)."
+      ],
+      "rule_id": "default_deny",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "deny"
+    },
+    "name": "empty policy: terminal deny",
+    "policy": "dataflow:",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "no rule matched this call, and the terminal rule is deny. A policy that cannot decide refuses (Hard Rule 2)."
+      ],
+      "rule_id": "default_deny",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "deny"
+    },
+    "name": "empty policy denies even a harmless read",
+    "policy": "dataflow:",
+    "tool": "mail.search"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "monitor mode: this call would have been DENY by rule 'default_deny', and was allowed because nothing is enforced in this mode.",
+        "no rule matched this call, and the terminal rule is deny. A policy that cannot decide refuses (Hard Rule 2)."
+      ],
+      "rule_id": "monitor:default_deny",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "allow"
+    },
+    "name": "empty monitor policy records the terminal deny",
+    "policy": "monitor:",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'no_mail' matched 'mail.send'"
+      ],
+      "rule_id": "no_mail",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "deny"
+    },
+    "name": "a rule scoped to a tool glob fires only for that glob",
+    "policy": "dataflow:no_mail,rest",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'rest' matched 'notes.write'"
+      ],
+      "rule_id": "rest",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "allow"
+    },
+    "name": "the same policy allows a tool outside the glob",
+    "policy": "dataflow:no_mail,rest",
+    "tool": "notes.write"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'first' matched 'mail.send'"
+      ],
+      "rule_id": "first",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "escalate"
+    },
+    "name": "an earlier rule shadows a later one",
+    "policy": "dataflow:first,second",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'fewer_than_three_legs' matched 'mail.send'",
+        "any two legs of the trifecta are safe; it is the third that is fatal",
+        "session holds 1 of 3 trifecta legs: external action",
+        "advisory detectors flagged this content (promptguard), so an otherwise-allowed call is put to a human. A detector score can only tighten a decision, never permit one."
+      ],
+      "rule_id": "fewer_than_three_legs",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": true,
+        "legs": 1,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "escalate"
+    },
+    "name": "a high detector score raises an allow to an escalate",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'fewer_than_three_legs' matched 'mail.send'",
+        "any two legs of the trifecta are safe; it is the third that is fatal",
+        "session holds 1 of 3 trifecta legs: external action"
+      ],
+      "rule_id": "fewer_than_three_legs",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": true,
+        "legs": 1,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "allow"
+    },
+    "name": "a low detector score changes nothing",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "sensitive",
+        "sources": [
+          "mail.search#0"
+        ],
+        "trust": "untrusted"
+      },
+      "reasons": [
+        "rule 'tainted_egress' matched 'mail.send'",
+        "this call would send content derived from untrusted input, out of a session that has touched private data. That is the exfiltration, whether or not the model meant it.",
+        "session holds 3 of 3 trifecta legs: untrusted input, sensitive data, external action",
+        "arguments derived from untrusted sources: $.body"
+      ],
+      "rule_id": "tainted_egress",
+      "tainted_args": [
+        "$.body"
+      ],
+      "trifecta": {
+        "external_action": true,
+        "legs": 3,
+        "sensitive_access": true,
+        "untrusted_input": true
+      },
+      "verdict": "deny"
+    },
+    "name": "a high detector score cannot soften a deny",
+    "policy": "dataflow:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'fewer_than_three_legs' matched 'mail.send'",
+        "any two legs of the trifecta are safe; it is the third that is fatal",
+        "session holds 1 of 3 trifecta legs: external action"
+      ],
+      "rule_id": "fewer_than_three_legs",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": true,
+        "legs": 1,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "allow"
+    },
+    "name": "detector scores are ignored entirely in monitor mode",
+    "policy": "monitor:scope_violation,tainted_egress,rule_of_two,unclassified_tool,fewer_than_three_legs",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'flagged' matched 'mail.send'"
+      ],
+      "rule_id": "flagged",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "deny"
+    },
+    "name": "a rule keyed on a detector fires when it scores above the threshold",
+    "policy": "dataflow:flagged,rest",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'rest' matched 'mail.send'"
+      ],
+      "rule_id": "rest",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "allow"
+    },
+    "name": "a missing detector score never satisfies a threshold",
+    "policy": "dataflow:flagged,rest",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'rest' matched 'mail.send'"
+      ],
+      "rule_id": "rest",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "allow"
+    },
+    "name": "a detector rule needs every named detector above threshold",
+    "policy": "dataflow:flagged,rest",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'rest' matched 'mail.send'",
+        "advisory detectors flagged this content (pg), so an otherwise-allowed call is put to a human. A detector score can only tighten a decision, never permit one."
+      ],
+      "rule_id": "rest",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "escalate"
+    },
+    "name": "the advisory floor still applies when a detector rule does not fire",
+    "policy": "dataflow:flagged,rest",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'taint' matched 'mail.send'",
+        "session holds 1 of 3 trifecta legs: untrusted input"
+      ],
+      "rule_id": "taint",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 1,
+        "sensitive_access": false,
+        "untrusted_input": true
+      },
+      "verdict": "deny"
+    },
+    "name": "strict treats clean arguments as tainted when the session is",
+    "policy": "strict:taint,rest",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'rest' matched 'mail.send'",
+        "session holds 1 of 3 trifecta legs: untrusted input"
+      ],
+      "rule_id": "rest",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 1,
+        "sensitive_access": false,
+        "untrusted_input": true
+      },
+      "verdict": "allow"
+    },
+    "name": "dataflow trusts clean attribution where strict does not",
+    "policy": "dataflow:taint,rest",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'taint' matched 'mail.send'",
+        "session holds 1 of 3 trifecta legs: untrusted input",
+        "the provenance ledger has evicted sources, so arguments are treated conservatively rather than assumed clean"
+      ],
+      "rule_id": "taint",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 1,
+        "sensitive_access": false,
+        "untrusted_input": true
+      },
+      "verdict": "deny"
+    },
+    "name": "dataflow falls back to session level once the ledger is incomplete",
+    "policy": "dataflow:taint,rest",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'rest' matched 'mail.send'"
+      ],
+      "rule_id": "rest",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "allow"
+    },
+    "name": "strict with no untrusted input still allows",
+    "policy": "strict:taint,rest",
+    "tool": "mail.send"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'rest' matched 'mail.search'"
+      ],
+      "rule_id": "rest",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "allow"
+    },
+    "name": "an effect condition does not fire for an inert tool",
+    "policy": "dataflow:ext,rest",
+    "tool": "mail.search"
+  },
+  {
+    "decision": {
+      "label": {
+        "detector_scores": {},
+        "sensitivity": "public",
+        "sources": [],
+        "trust": "trusted"
+      },
+      "reasons": [
+        "rule 'ext' matched 'mail.send'"
+      ],
+      "rule_id": "ext",
+      "tainted_args": [],
+      "trifecta": {
+        "external_action": false,
+        "legs": 0,
+        "sensitive_access": false,
+        "untrusted_input": false
+      },
+      "verdict": "deny"
+    },
+    "name": "an effect condition fires for an external tool",
+    "policy": "dataflow:ext,rest",
+    "tool": "mail.send"
+  }
+]

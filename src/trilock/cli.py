@@ -18,6 +18,7 @@ import typer
 
 from trilock import __version__, log
 from trilock.config import ConfigError, TrilockConfig, find_config, load_config
+from trilock.policy.model import Policy, PolicyError, load_policy
 
 app = typer.Typer(
     name="trilock",
@@ -102,11 +103,42 @@ def check(
         typer.echo(f"  {name}  ({detail})")
     typer.echo(f"policy: {cfg.policy or '<none — proxy runs in passthrough>'}")
     typer.echo(f"pins: {cfg.pins.path if cfg.pins.enabled else '<disabled>'}")
+
+    policy: Policy | None = None
+    if cfg.policy is not None:
+        try:
+            policy = load_policy(cfg.policy)
+        except PolicyError as exc:
+            typer.echo(f"trilock: {exc}", err=True)
+            raise typer.Exit(2) from exc
+        typer.echo(f"mode: {policy.mode.value}")
+        typer.echo(f"unclassified: {policy.unclassified_verdict.value}")
+        typer.echo(f"rules: {len(policy.rules)} (first match wins, then default_deny)")
+        for rule in policy.rules:
+            typer.echo(f"  {rule.id:24} -> {rule.then.value}")
     if cfg.servers:
-        raise typer.Exit(asyncio.run(_inspect_upstreams(cfg, repin=repin)))
+        raise typer.Exit(asyncio.run(_inspect_upstreams(cfg, policy, repin=repin)))
+    if policy is not None:
+        _print_tool_table(policy, sorted(policy.tools))
 
 
-async def _inspect_upstreams(cfg: TrilockConfig, *, repin: bool) -> int:
+def _print_tool_table(policy: Policy, tools: list[str]) -> None:
+    """The resolved classification for every tool, as policy actually sees it."""
+    typer.echo("")
+    typer.echo(f"{'tool':32} {'reads':10} {'sensitivity':12} {'effect':9} scope")
+    typer.echo("-" * 84)
+    for tool, cls in policy.resolved_table(tools):
+        if cls is None:
+            typer.echo(
+                f"{tool:32} {'-':10} {'-':12} {'-':9} <unclassified -> {policy.unclassified_verdict.value}>"
+            )
+            continue
+        reads = cls.reads.value if cls.reads else "-"
+        scope = ", ".join(cls.scope) if cls.scope else "-"
+        typer.echo(f"{tool:32} {reads:10} {cls.sensitivity.value:12} {cls.effect.value:9} {scope}")
+
+
+async def _inspect_upstreams(cfg: TrilockConfig, policy: Policy | None, *, repin: bool) -> int:
     """List every upstream's tools, reporting pin violations. Returns an exit code."""
     from trilock.proxy.server import build_proxy
 
@@ -120,8 +152,11 @@ async def _inspect_upstreams(cfg: TrilockConfig, *, repin: bool) -> int:
                 down.append(status["server"])
                 typer.echo(f"      reason: {status['last_error']}", err=True)
         typer.echo(f"tools: {len(tools.tools)}")
-        for tool in sorted(tools.tools, key=lambda t: t.name):
-            typer.echo(f"  {tool.name}")
+        if policy is not None:
+            _print_tool_table(policy, [t.name for t in tools.tools])
+        else:
+            for tool in sorted(tools.tools, key=lambda t: t.name):
+                typer.echo(f"  {tool.name}")
         pins = router.pins
         if pins is None:
             return 0

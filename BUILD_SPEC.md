@@ -383,15 +383,15 @@ rules:
 
 **Goal:** the deterministic decision function. This is the heart of the project.
 
-- [ ] **2.1 — Policy schema and loader**
+- [x] **2.1 — Policy schema and loader**
   `policy/model.py`. Pydantic v2 models for the §7 YAML. Version field. Clear errors with line numbers on invalid policy. `trilock check` validates a policy file and prints the resolved tool classification table.
   **Verify:** 15+ malformed policies each produce a specific, actionable error. Round-trip test: load → dump → load is stable.
 
-- [ ] **2.2 — Trifecta accounting**
+- [x] **2.2 — Trifecta accounting**
   `policy/trifecta.py`. Maintain `TrifectaState` per session. `untrusted_input` set when a tool classified `reads: untrusted` returns. `sensitive_access` set when a tool classified `sensitivity: sensitive` returns. `external_action` evaluated per-call for tools classified `effect: external`. Monotonic within a session — legs never un-set except by an explicit session reset.
   **Verify:** state machine tests over every ordering of the three events, plus reset semantics.
 
-- [ ] **2.3 — The decision function**
+- [x] **2.3 — The decision function**
   `policy/engine.py::decide`. Pure. No I/O, no clock, no randomness (Hard Rule 4). Rule evaluation is ordered and first-match-wins, with `default_deny` as the terminal rule. Every `Decision` names the rule that produced it.
   **Verify:** hypothesis test asserts determinism — 5000 random `(call, session, policy)` triples each decided twice, always identical. Plus a golden-file suite of 40+ scenario → expected-decision pairs.
 
@@ -607,6 +607,9 @@ rules:
 [1.3] Normalisation of inbound content: Unicode Tags + variation-selector smuggling decoded (not just stripped) so the instruction is readable; zero-width stripped; bidi stripped with the rendered reading surfaced; mixed-script homoglyphs folded; HTML/CSS-hidden text and script/style/comment content surfaced. 18 attack cases (spec asked 12) all surface the payload; 10 legitimate-content cases prove no corruption. ZWJ/ZWNJ are NOT blanket-stripped — they are load-bearing in emoji and Indic/Perso-Arabic scripts, so they go only out of joining context. Corpus is generated from explicit codepoints, never committed raw, so no editor or filter can quietly rewrite a payload.
 [1.4] Argument attribution: walks arguments to JSON paths, matches 5-gram fingerprints + exact high-entropy tokens (emails/URLs/hex/secret-shaped) + one layer of base64. 29-row table incl. 3 rows marked KNOWN MISS (paraphrase, short non-identifier fragment, double-encoded base64) with a test asserting strict mode still catches each. Threshold 0.15 chosen deliberately: a false positive costs an escalation, a false negative costs an exfiltration. Matching touches sources so content in active use survives LRU eviction.
 [1.5] Provenance wired into the proxy: guard normalises on ingress before the ledger fingerprints or the agent sees it, labels by policy classification (unclassified => untrusted), and attributes every outbound call. One tool result = ONE ledger source (text blocks + structured payload combined) — recording them separately double-counted results whose structured payload restates their text. DECISION (reorder): policy/model.py, policy/decision.py and policy/trifecta.py were written here rather than in Phase 2, because 1.5 needs tool classification to label anything; Phase 2 does their verification. Also wrote policies/{default,strict,dataflow,monitor}.yaml. Found and fixed the design's weakest link the hard way — see commit.
+[2.1] Policy schema (written in 1.5, verified here): 21 malformed policies each producing a field-named actionable error, round-trip stability for all four shipped policies, exact-then-longest-glob classification with deterministic tie-break, and 'trilock check' printing the resolved tool table.
+[2.2] Trifecta accounting verified over all 6 orderings of three events and all 6 orderings of two, plus monotonicity (ingress legs never un-set), external evaluated per-call not per-session, and reset as the only way a leg clears.
+[2.3] decide() is pure: 5000-example hypothesis determinism, plus properties that every decision names a real rule, monitor never blocks, and decide never mutates its inputs. 46 hand-reasoned scenarios (expected verdict AND rule id written by hand, not blessed from a run) + a 45-entry golden file over the whole Decision. Simplified shipped policies from three overlapping allow rules to one. SessionSnapshot is frozen so the engine cannot reach the ledger or the content.
 ```
 
 ---

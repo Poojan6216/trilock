@@ -71,15 +71,11 @@ rules:
     then: escalate
     because: "no policy entry classifies this tool, so what it does is unknown"
 
-  - id: benign
+  # `trifecta_legs: N` fires at N legs *or more*, so this rule is reached only
+  # for calls the rules above did not claim -- which by then means fewer than
+  # three legs. One rule rather than three: any two legs are safe, and it is
+  # the third that is fatal.
+  - id: fewer_than_three_legs
     when: { trifecta_legs: 0 }
     then: allow
-
-  - id: two_legs_is_safe
-    when: { trifecta_legs: 2 }
-    then: allow
     because: "any two legs of the trifecta are safe; it is the third that is fatal"
-
-  - id: one_leg_is_safe
-    when: { trifecta_legs: 1 }
-    then: allow
