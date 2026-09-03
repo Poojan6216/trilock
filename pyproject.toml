@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mcp-trilock"
-version = "0.2.0"
+version = "0.2.1"
 description = "A drop-in MCP proxy that makes the lethal trifecta structurally impossible."
 readme = "README.md"
 requires-python = ">=3.12"

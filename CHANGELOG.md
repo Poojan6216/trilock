@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-09-03
+
+Packaging and documentation only. No behaviour change.
+
+### Fixed
+- The published package carried a README that predated the PyPI release: it told
+  readers to install "once published" and never mentioned that Trilock needs
+  Python 3.12 or newer. Under an older Python `pip install mcp-trilock` fails
+  with "No matching distribution found", which reads as a broken package rather
+  than a version floor. The README now states the floor and leads with
+  `uv tool install`, which brings its own interpreter.
+- `n.txt`, a five-byte note written during an early manual run and committed by
+  accident, shipped inside the 0.1.0 and 0.2.0 source distributions. Removed.
+
+### Added
+- `SECURITY.md` (private vulnerability reporting, with the two-leg integrity
+  class named as out of scope by design) and `CONTRIBUTING.md` (the five rules
+  the code keeps: pure `decide()`, advisory detectors, no secret values in logs,
+  no telemetry, no hand-typed numbers).
+- README badges for the PyPI version, CI status, Python floor, licence and the
+  headline benchmark number.
+
 ## [0.2.0] - 2026-09-03
 
 Provenance that outlives the session, and the integrity policy.
