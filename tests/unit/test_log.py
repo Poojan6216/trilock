@@ -57,3 +57,16 @@ def test_coerce_handles_unserialisable_values() -> None:
     record = json.loads(stream.getvalue())
     assert isinstance(record["s"], list)
     assert isinstance(record["m"]["k"], str)
+
+
+def test_safe_extra_renames_reserved_logrecord_keys() -> None:
+    import logging
+
+    stream = io.StringIO()
+    logger = log.configure("INFO", stream=stream)
+    data = {"created": "2026", "name": "x", "filename": "f", "ok": 1}
+    logger.info("record", extra=log.safe_extra(data))  # must not raise
+    record = json.loads(stream.getvalue())
+    assert record["created_"] == "2026" and record["name_"] == "x" and record["ok"] == 1
+    with __import__("pytest").raises(KeyError):
+        logging.getLogger("trilock").info("boom", extra={"created": "collides"})

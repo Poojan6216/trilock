@@ -219,10 +219,41 @@ def _is_glob(pattern: str) -> bool:
 PolicySource = Annotated[Path | str, "a path to a policy document, or its YAML text"]
 
 
+PACKAGED_DIRS: tuple[Path, ...] = (
+    Path(__file__).resolve().parent.parent / "_policies",  # inside an installed wheel
+    Path(__file__).resolve().parents[3] / "policies",  # a source checkout
+)
+"""Where the shipped policies live: `trilock/_policies` in a wheel, `policies/` in the repo."""
+
+SHIPPED: tuple[str, ...] = ("default", "strict", "dataflow", "monitor")
+
+
+def resolve_policy_path(spec: Path | str) -> Path:
+    """Turn a policy reference into a file path.
+
+    A bare name (`dataflow`, `strict.yaml`) resolves to the copy shipped inside
+    the package, so a pip user can write `policy: dataflow` without knowing
+    where the wheel unpacked. Anything with a directory component, or that
+    exists as given, is used as-is.
+    """
+    path = Path(spec)
+    if path.is_file() or path.parent != Path():
+        return path
+    name = path.name.removesuffix(".yaml").removesuffix(".yml")
+    if name in SHIPPED:
+        for directory in PACKAGED_DIRS:
+            packaged = directory / f"{name}.yaml"
+            if packaged.is_file():
+                return packaged
+    return path
+
+
 def load_policy(path: Path) -> Policy:
     """Load and validate a policy document, with the file named in every error."""
+    path = resolve_policy_path(path)
     if not path.is_file():
-        raise PolicyError(f"policy file not found: {path}")
+        hint = f" (shipped policies: {', '.join(SHIPPED)})" if path.parent == Path() else ""
+        raise PolicyError(f"policy file not found: {path}{hint}")
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:

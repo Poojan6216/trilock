@@ -13,9 +13,20 @@ import json
 from pathlib import Path
 
 import pytest
+import pytest as _pytest
 import yaml
 
+from trilock import log
 from trilock.integrations import claude_code, generic
+
+
+@_pytest.fixture(autouse=True)
+def _verbose_logging() -> None:
+    """INFO records must be *built*, not skipped, or the LogRecord-key collision
+    that once broke `init()` only shows up when another test has enabled logging."""
+    log.configure("DEBUG")
+
+
 from trilock.integrations.claude_code import IntegrationError, init, load_client_config, uninstall
 
 SHAPES: dict[str, bytes] = {

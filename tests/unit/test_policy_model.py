@@ -210,3 +210,31 @@ def test_shipped_policies_are_internally_consistent() -> None:
     assert all(r.when.args_tainted_by is None for r in strict.rules)
     for name in ("default", "strict", "dataflow", "monitor"):
         assert load_policy(POLICIES / f"{name}.yaml").unclassified_verdict is not Verdict.ALLOW
+
+
+# -- shipped policies resolve by bare name ------------------------------------
+
+
+def test_bare_names_resolve_to_the_packaged_policies() -> None:
+    from trilock.policy.model import SHIPPED, resolve_policy_path
+
+    for name in SHIPPED:
+        resolved = resolve_policy_path(Path(name))
+        assert resolved.is_file(), f"{name} did not resolve to a shipped policy"
+        assert resolved.name == f"{name}.yaml"
+        assert resolve_policy_path(Path(f"{name}.yaml")) == resolved
+        assert load_policy(Path(name)).mode.value in ("strict", "dataflow", "monitor")
+
+
+def test_paths_with_directories_are_left_alone(tmp_path: Path) -> None:
+    from trilock.policy.model import resolve_policy_path
+
+    custom = tmp_path / "mine.yaml"
+    custom.write_text("version: 1\n", encoding="utf-8")
+    assert resolve_policy_path(custom) == custom
+    assert resolve_policy_path(Path("sub/dataflow")) == Path("sub/dataflow")
+
+
+def test_an_unknown_bare_name_names_the_shipped_options() -> None:
+    with pytest.raises(PolicyError, match="shipped policies: default, strict"):
+        load_policy(Path("paranoid"))

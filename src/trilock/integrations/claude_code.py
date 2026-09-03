@@ -232,7 +232,9 @@ def init(
         "created": stamp,
     }
     (state_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    _log.info("client wrapped behind trilock", extra=manifest)
+    # Nested on purpose: a flat `extra=manifest` collides with LogRecord's own
+    # attributes (`created`), and logging raises KeyError at INFO level.
+    _log.info("client wrapped behind trilock", extra={"manifest": manifest})
     return manifest
 
 

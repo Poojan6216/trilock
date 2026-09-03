@@ -142,6 +142,19 @@ class TrilockConfig(_Strict):
         return self
 
 
+def _resolve_policy(base: Path, policy: Path | None) -> Path | None:
+    """Relative policy paths resolve against the config file; bare shipped names stay bare.
+
+    `policy: dataflow` means the packaged policy, not `<config dir>/dataflow`.
+    The policy loader does the final resolution.
+    """
+    if policy is None:
+        return None
+    if policy.parent == Path() and not (base / policy).is_file():
+        return policy
+    return base / policy
+
+
 def default_config_paths() -> tuple[Path, ...]:
     """The search path for ``trilock.yaml``, in priority order."""
     xdg = os.environ.get("XDG_CONFIG_HOME")
@@ -183,7 +196,7 @@ def load_config(path: Path | None = None) -> TrilockConfig:
     return config.model_copy(
         update={
             "source_path": resolved,
-            "policy": (base / config.policy) if config.policy is not None else None,
+            "policy": _resolve_policy(base, config.policy),
             "state_dir": base / config.state_dir,
             "audit": config.audit.model_copy(update={"path": base / config.audit.path}),
             "detectors": config.detectors.model_copy(

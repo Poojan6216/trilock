@@ -81,6 +81,16 @@ def configure(level: str | int | None = None, *, stream: IO[str] | None = None) 
     return logger
 
 
+def safe_extra(fields: Mapping[str, Any]) -> dict[str, Any]:
+    """Rename any key that would collide with a LogRecord attribute.
+
+    `logging` raises KeyError for `extra` keys such as `created`, `name`,
+    `module` or `filename`. Call this when the extra comes from data rather
+    than from literals in the call site.
+    """
+    return {(f"{k}_" if k in _RESERVED else k): v for k, v in fields.items()}
+
+
 def get(name: str = "") -> logging.Logger:
     """Return the ``trilock`` logger, or a child of it."""
     return logging.getLogger(f"{LOGGER_NAME}.{name}" if name else LOGGER_NAME)
