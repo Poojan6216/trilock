@@ -32,7 +32,8 @@ dependencies = [
 [project.optional-dependencies]
 detect = ["onnxruntime>=1.20,<1.24", "tokenizers>=0.21", "huggingface-hub>=0.27"]
 bench = ["agentdojo>=0.1.20", "matplotlib>=3.9", "numpy>=2.0"]
-perplexity = ["torch>=2.4", "transformers>=4.44"]
+# torch 2.2.2 is the last release with a macOS x86_64 wheel; newer only ship arm64.
+perplexity = ["torch>=2.2,<2.3", "transformers>=4.44,<4.50", "matplotlib>=3.9"]
 
 [project.scripts]
 trilock = "trilock.cli:main"
@@ -42,6 +43,12 @@ Homepage = "https://github.com/trilock/mcp-trilock"
 Source = "https://github.com/trilock/mcp-trilock"
 
 [dependency-groups]
+# `uv run` syncs the default groups on every invocation and removes anything
+# else, so the detector runtime and the benchmark harness live here as well as
+# in the extras above: a plain `uv run pytest` must not silently uninstall
+# onnxruntime and skip the model-backed tests.
+detect = ["onnxruntime>=1.20,<1.24", "tokenizers>=0.21", "huggingface-hub>=0.27"]
+bench = ["agentdojo>=0.1.20", "matplotlib>=3.9", "numpy>=2.0"]
 dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.24",
@@ -51,6 +58,9 @@ dev = [
   "ruff>=0.8",
   "types-pyyaml>=6.0.12",
 ]
+
+[tool.uv]
+default-groups = ["dev", "detect", "bench"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/trilock"]
@@ -88,7 +98,8 @@ ignore = [
 # ASYNC110: tests legitimately poll for a state change another task owns.
 # ASYNC240: test setup does trivial blocking path work; no event loop to starve.
 "tests/**" = ["S", "B011", "ASYNC110", "ASYNC240"]
-"bench/**" = ["S"]
+# E501: the report generator holds long prose strings that render into RESULTS.md.
+"bench/**" = ["S", "E501"]
 # The invisible-text corpus builder must contain the real control characters it
 # encodes; RUF001-003 exist to flag exactly those, which is the point here.
 "tests/fixtures/attacks/**" = ["RUF001", "RUF002", "RUF003"]

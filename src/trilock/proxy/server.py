@@ -12,6 +12,7 @@ does not itself model.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, Final
@@ -228,8 +229,16 @@ def build_server(router: Router, guard: Guard | None = None) -> Server[None]:
     ) -> types.CallToolResult | types.InputRequiredResult:
         call_ctx = guard.prepare(ctx.session, params.name, params.arguments) if guard else None
         if guard is not None and call_ctx is not None:
-            decision = guard.decide(call_ctx, await guard.egress_scores(call_ctx))
-            guard.observe(call_ctx, decision)
+            started = time.perf_counter()
+            egress = await guard.egress_scores(call_ctx)
+            snapshot = guard.snapshot(call_ctx, egress)
+            decision = guard.decide(call_ctx, egress)
+            guard.observe(
+                call_ctx,
+                decision,
+                snapshot=snapshot,
+                latency_ms=(time.perf_counter() - started) * 1000,
+            )
             if decision.verdict is Verdict.ESCALATE:
                 held = _handle_escalation(ctx, guard, call_ctx, decision, params)
                 if held is not None:

@@ -463,12 +463,12 @@ rules:
 
 **Goal:** a reproducible AgentDojo number. This phase is worth more than Phases 0–4 combined for the project's credibility.
 
-- [ ] **5.1 — Audit log and replay**
+- [x] **5.1 — Audit log and replay**
   `audit/log.py`: append-only JSONL, each record carrying SHA-256 of the previous record (hash chain). Records: call id, session, tool, argument *shapes and hashes* (never values — Hard Rule 6), taint label, trifecta state, decision, rule id, latency.
   `audit/replay.py`: `trilock replay <log>` re-runs the pure decision function over the recorded state and asserts every recorded verdict is reproduced. A mismatch is a build failure.
   **Verify:** tamper test — flipping one byte in a log breaks the chain and is detected. Secret-leak test — a session seeded with 15 secret formats from `tests/fixtures/secrets/seeded.json` produces a log containing none of them. **This test is mandatory and must never be skipped.**
 
-- [ ] **5.2 — AgentDojo integration**
+- [x] **5.2 — AgentDojo integration**
   `bench/agentdojo_defense.py`. Register Trilock as an AgentDojo defense. AgentDojo has 97 user tasks and 629 security cases across banking, Slack, travel and workspace suites, and scores success with formal utility functions over environment state rather than an LLM judge `[cited]` — which is exactly why it is the right benchmark. Map AgentDojo's tools into Trilock policy under `policies/agentdojo/`.
   **Verify:** a single suite runs end to end and produces per-task results.
 
@@ -492,10 +492,10 @@ rules:
 
 **Goal:** the phase that separates this project from every MCP gateway on GitHub. *The Attacker Moves Second* broke 12 published defenses, most of which had reported near-zero ASR, because none were evaluated against an adversary who could see the defense and adapt `[cited]`. We assume our reader knows this. So we attack ourselves first.
 
-- [ ] **6.1 — Threat model, written down**
+- [x] **6.1 — Threat model, written down**
   `docs/threat-model.md`. State precisely: what Trilock defends (blast radius of a hijacked agent), what it does not (the model still gets fooled; a malicious *upstream server* is partly out of scope; a user who approves everything is out of scope), the trust boundaries, and the session-identity assumptions from 1.2. Be specific about the weakest link.
 
-- [ ] **6.2 — The adaptive attacker**
+- [x] **6.2 — The adaptive attacker**
   `bench/adaptive/`. Build an attacker that *knows the defense* and targets its seams. At minimum:
   - **Paraphrase evasion** — restate injected content so n-gram attribution misses it (targets `dataflow` 1.4).
   - **Scope-boundary probing** — find an external action inside an allowed scope that still leaks (write to an allowed path that is world-readable; POST to an allowlisted host with data in the path).
@@ -509,7 +509,7 @@ rules:
   `RESULTS.md` gets an **"Attacks that work against Trilock"** section with the measured ASR per strategy per mode. Do not fix-and-hide: where you fix something, keep the pre-fix number in the table with the commit that changed it. Where you can't fix it, say so and explain why.
   **Verify:** the section exists and contains at least one attack with non-zero ASR. If every attack scores zero, your attacker is too weak — go back to 6.2. A defense that reports zero against its own red team is reporting a broken red team.
 
-- [ ] **6.4 — The perplexity negative result**
+- [x] **6.4 — The perplexity negative result**
   `detect/perplexity.py`, built **only** for this experiment and never wired into policy. Implement sliding-window perplexity over the attack corpus using a small open model (GPT-2 is the standard scorer for this measurement).
   Measure and publish three things: (a) ROC/FPR-FNR on GCG-style high-perplexity injections, where it should work; (b) the same on natural-language injections like the §2 attack, where it should fail; (c) **the repetition attack** — duplicate the malicious content and re-measure. Published work reports clean documents at 46.6 mean perplexity vs malicious at 154.1, with a single duplication dropping the malicious text to 14.4, *below the clean average* `[cited]`. Reproduce this on our corpus with our numbers.
   Write it up in `docs/why-detection-is-not-enough.md`.
@@ -621,6 +621,11 @@ rules:
 [4.2] Deterministic heuristics (role tokens, override phrasing, tool mentions, markdown-image/URL payload exfil, base64 blobs, normalisation-removed count), linear-time per line. MEASURED, NOT TUNED: precision 0.962 / recall 0.806 @0.4 over 31 visible injections + 40 benign (6 misses named, 1 false alarm: a benign signed URL). Artefact: bench/results/heuristics_precision_recall.json.
 [4.3] Prompt Guard 2 22M on onnxruntime CPU. DEVIATION: meta-llama repo is gated (manual) with no HF token available, so Trilock downloads the ungated ONNX export gravitee-io/Llama-Prompt-Guard-2-22M-onnx of the SAME weights and pins SHA-256 of model+tokenizer; a mismatching download is refused. Explicit install via 'trilock check --download-models'. onnxruntime pinned <1.24 (1.29 dropped Intel-mac wheels). MEASURED (bench/results/detector_latency.json): short text p50 11.7ms; 4KB doc p50 252ms => OVER the 150ms budget => default OFF as the spec instructs. Chunking (128 tok, overlap 16, batched, max) is mandatory: unchunked, a tail injection scored 0.003; chunked it scores 0.029 — still diluted. Recorded as a negative result. CoreML provider crashes on this graph: CPU only.
 [4.4] Monotonicity in the engine: advisory scores raise ALLOW->ESCALATE at >=0.9 or select a detector_above rule; never loosen. 3000-example property: zeroing scores never stricter, maxing never looser, absent never evidence. Phase gate: detectors on vs off produce IDENTICAL blocks on the attack suite (dataflow+strict); heuristics add 0.34ms p50 to the request path; a hung detector in the live proxy is bounded and changes nothing.
+[5.1] Hash-chained JSONL audit log (audit/log.py): each record carries SHA-256 of the previous, genesis-anchored, resumes across restarts, atomic append; records hold argument SHAPES (path/type/length/sha256), taint labels, trifecta, the frozen SessionSnapshot and the Decision — never values. audit/replay.py + 'trilock replay' re-derive every verdict and exit 7 on a mismatch or chain break. Tamper test: one flipped byte or one deleted record is detected. MANDATORY no-leak test: 15 secret formats seeded through a live session in dataflow/strict/monitor — none appear in the audit log, structured log, pins or approvals mailbox.
+[5.2] AgentDojo 0.1.35 wired (bench/agentdojo_defense.py): Trilock as a BasePipelineElement whose every call goes through classify->normalise->label->attribute->trifecta->decide. Per-suite policies for all 74 tools across workspace/travel/banking/slack (0 unclassified). BLOCKER + DECISION: no LLM API key exists in this environment, so the agent is an ORACLE (each task's ground-truth calls, then the injection task's ground-truth calls = a fully hijacked model). Strongest possible adversary; undefended ASR ~1 by construction; utility-under-attack measures Trilock's false positives. Two readings reported side by side: oracle (ESCALATE=blocked) and attentive human (approves own-task escalations, declines attacker's; DENY never overridden). banking/dataflow verified end to end: 144 cases, ASR 0.000, benign 0.438 oracle / 0.750 human.
+[6.1] docs/threat-model.md written: what is defended (blast radius of a hijacked agent), what is not (the model being fooled, approve-everything users, malicious-from-the-start servers, out-of-MCP actions, multi-agent, redirects, telling-the-user exfil), trust boundaries, the session-identity resolution order with the degraded stateless-2026-07-28 case and the refuse-to-enforce answer, attribution's enumerated misses, and a ranked list of weakest links.
+[6.2] Adaptive attacker (bench/adaptive/): 8 strategies, 39 scenarios, 3 human models (none/attentive/tired) x 2 modes, driven through the real decide() path. MEASURED: paraphrase and encoding beat dataflow at ASR 0.571 with an attentive human (unattributable body + no visible credential => ESCALATE => approved) and 0.000 against strict; compound fatigue+paraphrase 0.333 in dataflow, 0 in strict; session splitting 1.000 and disk-laundering 0.333 beat BOTH modes (structural); scope probing 0 (payload visible to the human); padding 0 (exact-token extraction has no cap). Found that a naive attacker who names the destination inside the injection is denied by tainted_egress whatever the body — kept as its own 'destination_leak' row so the contrast is visible.
+[6.4] Perplexity negative result, measured on our corpora with GPT-2 (bench/perplexity_experiment.py): GCG-style vs benign AUC 1.00 (works); natural-language injections vs benign AUC 0.65 with 45% benign flagged at the best threshold (fails); embedded in prose AUC 0.59; repetition attack drops injection mean 136.0 -> 14.1, below the benign mean 102.4, for 100% of injections (published: 154.1 -> 14.4 vs 46.6 — reproduced). Three plots in docs/plots/. docs/why-detection-is-not-enough.md written from these numbers plus Prompt Guard dilution (0.999 -> 0.029) and heuristics P/R. detect/perplexity.py is imported by nothing in the request path (asserted by a test). DEVIATION: torch pinned to 2.2.2 — the last release with an Intel-mac wheel.
 ```
 
 ---

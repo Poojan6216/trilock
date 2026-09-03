@@ -1,0 +1,22 @@
+# Shared rule set for every AgentDojo suite. The runner overlays `mode` and the
+# suite's tool table onto this. Rules are the shipped default rules, unchanged:
+# the benchmark measures Trilock as shipped, not a benchmark-tuned variant.
+version: 1
+mode: dataflow
+unclassified: escalate
+rules:
+  - id: scope_violation
+    when: { scope_violation: true }
+    then: deny
+  - id: tainted_egress
+    when: { effect: external, args_tainted_by: untrusted, session_touched: sensitive }
+    then: deny
+  - id: rule_of_two
+    when: { trifecta_legs: 3 }
+    then: escalate
+  - id: unclassified_tool
+    when: { unclassified: true }
+    then: escalate
+  - id: fewer_than_three_legs
+    when: { trifecta_legs: 0 }
+    then: allow

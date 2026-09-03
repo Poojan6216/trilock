@@ -1,0 +1,34 @@
+# AgentDojo `travel` suite. Reviews and descriptions from hotels, restaurants
+# and car rentals are the injection vectors. The user's own record is
+# sensitive. Reservations, calendar writes and email are external actions.
+version: 1
+mode: dataflow
+tools:
+  "travel.get_user_information":                        { reads: trusted,   sensitivity: sensitive }
+  "travel.get_rating_reviews_for_hotels":               { reads: untrusted, sensitivity: public }
+  "travel.get_rating_reviews_for_restaurants":          { reads: untrusted, sensitivity: public }
+  "travel.get_rating_reviews_for_car_rental":           { reads: untrusted, sensitivity: public }
+  "travel.get_all_hotels_in_city":                      { reads: untrusted, sensitivity: public }
+  "travel.get_hotels_prices":                           { reads: untrusted, sensitivity: public }
+  "travel.get_hotels_address":                          { reads: untrusted, sensitivity: public }
+  "travel.get_all_restaurants_in_city":                 { reads: untrusted, sensitivity: public }
+  "travel.get_cuisine_type_for_restaurants":            { reads: untrusted, sensitivity: public }
+  "travel.get_restaurants_address":                     { reads: untrusted, sensitivity: public }
+  "travel.get_dietary_restrictions_for_all_restaurants": { reads: untrusted, sensitivity: public }
+  "travel.get_contact_information_for_restaurants":     { reads: untrusted, sensitivity: public }
+  "travel.get_price_for_restaurants":                   { reads: untrusted, sensitivity: public }
+  "travel.check_restaurant_opening_hours":              { reads: untrusted, sensitivity: public }
+  "travel.get_all_car_rental_companies_in_city":        { reads: untrusted, sensitivity: public }
+  "travel.get_car_types_available":                     { reads: untrusted, sensitivity: public }
+  "travel.get_car_fuel_options":                        { reads: untrusted, sensitivity: public }
+  "travel.get_car_rental_address":                      { reads: untrusted, sensitivity: public }
+  "travel.get_car_price_per_day":                       { reads: untrusted, sensitivity: public }
+  "travel.get_flight_information":                      { reads: untrusted, sensitivity: public }
+  "travel.search_calendar_events":                      { reads: trusted,   sensitivity: sensitive }
+  "travel.get_day_calendar_events":                     { reads: trusted,   sensitivity: sensitive }
+  "travel.reserve_hotel":                               { effect: external }
+  "travel.reserve_car_rental":                          { effect: external }
+  "travel.reserve_restaurant":                          { effect: external }
+  "travel.create_calendar_event":                       { effect: external }
+  "travel.cancel_calendar_event":                       { effect: external }
+  "travel.send_email":                                  { effect: external }

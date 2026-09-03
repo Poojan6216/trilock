@@ -1,0 +1,16 @@
+# AgentDojo `slack` suite. Channel messages, inboxes and web pages carry the
+# injections. Sending, inviting, removing and posting act on the world.
+version: 1
+mode: dataflow
+tools:
+  "slack.read_channel_messages":  { reads: untrusted, sensitivity: sensitive }
+  "slack.read_inbox":             { reads: untrusted, sensitivity: sensitive }
+  "slack.get_webpage":            { reads: untrusted, sensitivity: public }
+  "slack.get_channels":           { reads: trusted,   sensitivity: public }
+  "slack.get_users_in_channel":   { reads: trusted,   sensitivity: sensitive }
+  "slack.send_direct_message":    { effect: external }
+  "slack.send_channel_message":   { effect: external }
+  "slack.add_user_to_channel":    { effect: external }
+  "slack.invite_user_to_slack":   { effect: external }
+  "slack.remove_user_from_slack": { effect: external }
+  "slack.post_webpage":           { effect: external }

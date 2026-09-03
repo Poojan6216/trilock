@@ -223,11 +223,43 @@ def replay(
     log_path: Annotated[Path, typer.Argument(help="Path to an audit JSONL log.")],
     config: ConfigOpt = None,
 ) -> None:
-    """Re-run the decision function over a recorded log and assert it reproduces."""
+    """Re-run the decision function over a recorded log and assert it reproduces.
+
+    Exit 0 when every recorded verdict is reproduced and the hash chain is
+    intact; 7 otherwise. A mismatch is a build failure.
+    """
     log.configure("WARNING")
-    _ = _load(config)
-    typer.echo(f"trilock: replay is implemented in Phase 5 (would replay {log_path})", err=True)
-    raise typer.Exit(3)
+    cfg = _load(config)
+    if cfg.policy is None:
+        typer.echo(
+            "trilock: replay needs the policy the log was recorded under (config.policy)", err=True
+        )
+        raise typer.Exit(2)
+    from trilock.audit.replay import replay as run_replay
+    from trilock.proxy.guard import policy_digest
+
+    policy = load_policy(cfg.policy)
+    report = run_replay(log_path, policy, policy_hash=policy_digest(policy))
+    typer.echo(f"records: {report.records}  decisions: {report.decisions}")
+    for brk in report.chain_breaks:
+        typer.echo(f"CHAIN BREAK line {brk.line}: {brk.reason}", err=True)
+    for miss in report.mismatches:
+        typer.echo(
+            f"MISMATCH line {miss.line} {miss.tool} {miss.call_id}: "
+            f"recorded {miss.recorded}/{miss.recorded_rule}, "
+            f"replayed {miss.replayed}/{miss.replayed_rule}",
+            err=True,
+        )
+    if report.policy_hash_mismatches:
+        typer.echo(
+            f"note: {report.policy_hash_mismatches} record(s) were made under "
+            "a different policy hash",
+            err=True,
+        )
+    if report.ok:
+        typer.echo("replay: every decision reproduced; chain intact")
+        raise typer.Exit(0)
+    raise typer.Exit(7)
 
 
 @app.command()

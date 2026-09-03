@@ -1,0 +1,30 @@
+# AgentDojo `workspace` suite. Emails, calendar descriptions and drive files
+# all carry injections and all hold private data. Sending, sharing, creating
+# and deleting are external actions.
+version: 1
+mode: dataflow
+tools:
+  "workspace.get_unread_emails":                { reads: untrusted, sensitivity: sensitive }
+  "workspace.get_received_emails":              { reads: untrusted, sensitivity: sensitive }
+  "workspace.get_sent_emails":                  { reads: trusted,   sensitivity: sensitive }
+  "workspace.get_draft_emails":                 { reads: trusted,   sensitivity: sensitive }
+  "workspace.search_emails":                    { reads: untrusted, sensitivity: sensitive }
+  "workspace.search_contacts_by_name":          { reads: trusted,   sensitivity: sensitive }
+  "workspace.search_contacts_by_email":         { reads: trusted,   sensitivity: sensitive }
+  "workspace.get_current_day":                  { reads: trusted,   sensitivity: public }
+  "workspace.search_calendar_events":           { reads: untrusted, sensitivity: sensitive }
+  "workspace.get_day_calendar_events":          { reads: untrusted, sensitivity: sensitive }
+  "workspace.search_files_by_filename":         { reads: untrusted, sensitivity: sensitive }
+  "workspace.get_file_by_id":                   { reads: untrusted, sensitivity: sensitive }
+  "workspace.list_files":                       { reads: untrusted, sensitivity: sensitive }
+  "workspace.search_files":                     { reads: untrusted, sensitivity: sensitive }
+  "workspace.send_email":                       { effect: external }
+  "workspace.delete_email":                     { effect: external }
+  "workspace.create_calendar_event":            { effect: external }
+  "workspace.cancel_calendar_event":            { effect: external }
+  "workspace.reschedule_calendar_event":        { effect: external }
+  "workspace.add_calendar_event_participants":  { effect: external }
+  "workspace.append_to_file":                   { effect: external }
+  "workspace.create_file":                      { effect: external }
+  "workspace.delete_file":                      { effect: external }
+  "workspace.share_file":                       { effect: external }

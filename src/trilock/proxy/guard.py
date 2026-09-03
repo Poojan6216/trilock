@@ -16,6 +16,7 @@ computes and logs the full record, and blocks nothing.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import uuid
@@ -28,6 +29,7 @@ import mcp_types as types
 
 from trilock import log
 from trilock.approval import ApprovalScope, ApprovalStore, mailbox_path
+from trilock.audit.log import AuditLog
 from trilock.config import TrilockConfig
 from trilock.detect.base import Detector, merge_scores, run_detectors
 from trilock.detect.heuristics import HeuristicDetector
@@ -200,6 +202,16 @@ def _structured_text(result: types.CallToolResult) -> str | None:
     return json.dumps(result.structured_content, sort_keys=True, default=str)
 
 
+def policy_digest(policy: Policy | None) -> str:
+    """A stable digest of the policy a decision was made under."""
+    if policy is None:
+        return "none"
+    dumped = policy.model_dump(mode="json", exclude={"source_path"})
+    return hashlib.sha256(
+        json.dumps(dumped, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+
+
 class Guard:
     """Owns policy and session state for the life of one proxy process."""
 
@@ -217,6 +229,8 @@ class Guard:
         self.sessions = SessionRegistry(self.ledgers)
         self.approvals = ApprovalStore()
         self.detectors: list[Detector] = self._build_detectors()
+        self.audit: AuditLog | None = AuditLog(config.audit.path) if config.audit.enabled else None
+        self.policy_hash = policy_digest(policy)
 
     def _build_detectors(self) -> list[Detector]:
         """Advisory detectors, per config. Never a control (Hard Rule 1).
@@ -431,6 +445,29 @@ class Guard:
         # Hard Rule 5 does not license it.
         return replace_text(result, normalised[: len(texts)])
 
-    def observe(self, ctx: CallContext, decision: Decision) -> None:
-        """Log the full provenance record and the verdict for one call."""
+    def observe(
+        self,
+        ctx: CallContext,
+        decision: Decision,
+        *,
+        snapshot: SessionSnapshot | None = None,
+        latency_ms: float = 0.0,
+    ) -> None:
+        """Log the provenance record and the verdict, and append to the audit chain."""
         _log.info("call decided", extra={**ctx.to_json(), "decision": decision.to_json()})
+        if self.audit is None:
+            return
+        try:
+            self.audit.record_decision(
+                session=str(ctx.session.key),
+                call=ctx.call,
+                snapshot=snapshot if snapshot is not None else self.snapshot(ctx),
+                decision=decision,
+                policy_mode=self.mode.value,
+                policy_hash=self.policy_hash,
+                latency_ms=latency_ms,
+            )
+        except OSError as exc:  # a full disk must not take the proxy down
+            _log.error(
+                "audit write failed", extra={"error": str(exc), "path": str(self.audit.path)}
+            )

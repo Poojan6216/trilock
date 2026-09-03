@@ -1,0 +1,18 @@
+# AgentDojo `banking` suite. Injection vectors live in file contents, incoming
+# transaction subjects and the landlord notice: anything that *reads* those is
+# untrusted. Account data is sensitive. Money movement and account changes are
+# external actions.
+version: 1
+mode: dataflow
+tools:
+  "banking.read_file":                    { reads: untrusted, sensitivity: sensitive }
+  "banking.get_most_recent_transactions": { reads: untrusted, sensitivity: sensitive }
+  "banking.get_scheduled_transactions":   { reads: untrusted, sensitivity: sensitive }
+  "banking.get_iban":                     { reads: trusted,   sensitivity: sensitive }
+  "banking.get_balance":                  { reads: trusted,   sensitivity: sensitive }
+  "banking.get_user_info":                { reads: trusted,   sensitivity: sensitive }
+  "banking.send_money":                   { effect: external }
+  "banking.schedule_transaction":         { effect: external }
+  "banking.update_scheduled_transaction": { effect: external }
+  "banking.update_password":              { effect: external }
+  "banking.update_user_info":             { effect: external }
