@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with: { python-version: "3.12" }
       - run: uv sync
       - run: uv run ruff check .
@@ -37,7 +37,7 @@ jobs:
         python: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with: { python-version: "${{ matrix.python }}" }
       - run: uv sync
       # The whole suite, with coverage. Model-backed Prompt Guard tests skip
@@ -54,7 +54,7 @@ jobs:
     needs: lint-and-types
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with: { python-version: "3.12" }
       - run: uv sync
       - name: secret-leak test (mandatory, Hard Rule 6)
@@ -80,7 +80,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with: { python-version: "3.12" }
       - run: uv sync
       - run: uv run python bench/run_bench.py --all --quiet
