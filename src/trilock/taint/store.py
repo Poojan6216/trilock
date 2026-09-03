@@ -44,7 +44,19 @@ _log = log.get("taint.store")
 DEFAULT_MAX_SOURCES: Final[int] = 500
 DEFAULT_MAX_NGRAMS: Final[int] = 4096
 
-SessionKind = Literal["mcp-session", "connection"]
+SessionKind = Literal["mcp-session", "stdio-process", "principal", "connection"]
+"""How a session was identified, strongest first.
+
+``mcp-session``   the protocol's own session id. Exact.
+``stdio-process`` the stdio transport serves exactly one client for the life of
+                  the process, so the process *is* the session. Exact.
+``principal``     an authenticated identity from the transport. Exact per user,
+                  and merges that user's concurrent sessions, which over-taints.
+``connection``    the identity of the connection object. **Degraded**: on
+                  stateless 2026-07-28 the SDK builds a fresh connection per
+                  request, so this splits one logical session into many and
+                  under-counts taint. Trilock refuses to enforce on it.
+"""
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,0 +1,85 @@
+# Trilock monitor policy: decide and log, block nothing.
+#
+# For onboarding onto a live deployment. Every decision is computed and
+# logged; none is enforced. Run this first, read the log, fix the policy, then
+# switch to dataflow or strict.
+#
+# Classification vocabulary:
+#   reads:       trusted | untrusted   -- how much to trust content this tool returns
+#   sensitivity: public  | sensitive   -- how much damage disclosing it would do
+#   effect:      none    | external    -- whether calling it acts on the world
+#   scope:       glob(s)               -- where an external action may act
+version: 1
+mode: monitor
+
+tools:
+  # -- mail: the classic trifecta. Reads attacker-controlled text, holds
+  #    private threads, and can send.
+  "mail.search": { reads: untrusted, sensitivity: sensitive }
+  "mail.read": { reads: untrusted, sensitivity: sensitive }
+  "mail.drafts": { reads: trusted, sensitivity: sensitive }
+  "mail.send": { effect: external, describe: "sends email to an external recipient" }
+
+  # -- the web: untrusted by definition, and public.
+  "web.fetch": { reads: untrusted, sensitivity: public }
+  "web.search": { reads: untrusted, sensitivity: public }
+  "http.post": { effect: external, describe: "posts data to an external host" }
+
+  # -- local files: trusted content, sensitive, and writes act on the world.
+  "fs.read": { reads: trusted, sensitivity: sensitive }
+  "fs.list": { reads: trusted, sensitivity: public }
+  "fs.write": { effect: external, scope: "./workspace/**" }
+
+  # -- notes / docs: local content that is nonetheless attacker-reachable if
+  #    anything else can write to it.
+  "notes.read_note": { reads: untrusted, sensitivity: sensitive }
+  "notes.list_notes": { reads: trusted, sensitivity: public }
+  "notes.write_note": { effect: external, scope: "./workspace/**" }
+
+  # -- version control: reading is trusted-ish, pushing leaves the machine.
+  "git.log": { reads: trusted, sensitivity: public }
+  "git.diff": { reads: trusted, sensitivity: sensitive }
+  "git.push": { effect: external }
+
+unclassified: escalate
+
+rules:
+  # Order matters: first match wins, and there is an implicit terminal deny.
+
+  - id: scope_violation
+    when: { scope_violation: true }
+    then: deny
+    because: "an external action was asked to act outside the scope its policy declares"
+
+  - id: tainted_egress
+    when: { effect: external, args_tainted_by: untrusted, session_touched: sensitive }
+    then: deny
+    because: >-
+      this call would send content derived from untrusted input, out of a
+      session that has touched private data. That is the exfiltration, whether
+      or not the model meant it.
+
+  - id: rule_of_two
+    when: { trifecta_legs: 3 }
+    then: escalate
+    because: >-
+      this session holds all three legs of the lethal trifecta. Meta's Agents
+      Rule of Two says an agent in this state must not act autonomously.
+
+  - id: unclassified_tool
+    when: { unclassified: true }
+    then: escalate
+    because: "no policy entry classifies this tool, so what it does is unknown"
+
+  - id: benign
+    when: { trifecta_legs: 0 }
+    then: allow
+
+  - id: two_legs_is_safe
+    when: { trifecta_legs: 2 }
+    then: allow
+    because: "any two legs of the trifecta are safe; it is the third that is fatal"
+
+  - id: one_leg_is_safe
+    when: { trifecta_legs: 1 }
+    then: allow

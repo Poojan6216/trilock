@@ -23,6 +23,8 @@ from mcp_types import INVALID_PARAMS
 
 from trilock import __version__, log
 from trilock.config import TrilockConfig
+from trilock.policy.model import load_policy
+from trilock.proxy.guard import Guard
 from trilock.proxy.pins import PinStore
 from trilock.proxy.router import RouteError, Router
 from trilock.proxy.upstream import UpstreamUnavailableError, open_pool
@@ -80,7 +82,7 @@ def _progress_bridge(ctx: Ctx) -> Any:
     return on_progress
 
 
-def build_server(router: Router) -> Server[None]:
+def build_server(router: Router, guard: Guard | None = None) -> Server[None]:
     """Construct the downstream-facing MCP server over `router`."""
     server: Server[None] = Server(SERVER_NAME, version=__version__)
 
@@ -88,8 +90,9 @@ def build_server(router: Router) -> Server[None]:
         return await router.list_tools()
 
     async def on_call_tool(ctx: Ctx, params: types.CallToolRequestParams) -> types.CallToolResult:
+        call_ctx = guard.prepare(ctx.session, params.name, params.arguments) if guard else None
         try:
-            return await router.call_tool(
+            result = await router.call_tool(
                 params.name,
                 params.arguments,
                 meta=ctx.meta,
@@ -98,6 +101,10 @@ def build_server(router: Router) -> Server[None]:
         except (RouteError, UpstreamUnavailableError) as exc:
             _log.warning("tools/call not routed", extra={"tool": params.name, "error": str(exc)})
             return _error_result(str(exc))
+        if guard is not None and call_ctx is not None:
+            result = guard.ingest(call_ctx, result)
+            guard.observe(call_ctx)
+        return result
 
     async def on_list_prompts(
         _ctx: Ctx, _p: types.PaginatedRequestParams
@@ -150,22 +157,35 @@ def initialization_options(server: Server[None]) -> InitializationOptions:
 
 
 @asynccontextmanager
-async def build_proxy(config: TrilockConfig) -> AsyncIterator[tuple[Server[None], Router]]:
+async def build_proxy(
+    config: TrilockConfig,
+) -> AsyncIterator[tuple[Server[None], Router, Guard]]:
     """Open the upstream pool and build the downstream server over it."""
-    pins = (
-        PinStore.load(config.pins.path, strict=config.pins.strict) if config.pins.enabled else None
-    )
+    policy = load_policy(config.policy) if config.policy is not None else None
+    # `strict` mode implies strict pinning: a policy that refuses an
+    # unclassified tool would be inconsistent if it still exposed one whose
+    # definition had changed underneath it.
+    strict_pins = config.pins.strict or (policy is not None and policy.mode.value == "strict")
+    pins = PinStore.load(config.pins.path, strict=strict_pins) if config.pins.enabled else None
+    guard = Guard(config, policy)
     async with open_pool(config) as pool:
         router = Router(pool, pins)
-        _log.info("proxy ready", extra={"upstreams": pool.statuses()})
-        yield build_server(router), router
+        _log.info(
+            "proxy ready",
+            extra={
+                "upstreams": pool.statuses(),
+                "policy": str(config.policy) if config.policy else None,
+                "mode": guard.mode.value,
+            },
+        )
+        yield build_server(router, guard), router, guard
 
 
 async def serve_stdio(config: TrilockConfig) -> None:
     """Serve the proxy over stdio until the client closes the connection."""
     from mcp.server.stdio import stdio_server
 
-    async with build_proxy(config) as (server, _router):
+    async with build_proxy(config) as (server, _router, _guard):
         _log.info("serving over stdio", extra={"upstreams": sorted(config.servers)})
         # stdio_server() claims fd 1 and points it at stderr, so stray *native*
         # writes miss the wire. The guard goes inside that claim, not around it:

@@ -110,7 +110,7 @@ async def _inspect_upstreams(cfg: TrilockConfig, *, repin: bool) -> int:
     """List every upstream's tools, reporting pin violations. Returns an exit code."""
     from trilock.proxy.server import build_proxy
 
-    async with build_proxy(cfg) as (_server, router):
+    async with build_proxy(cfg) as (_server, router, _guard):
         tools = await router.list_tools()
         down: list[str] = []
         for status in router.pool.statuses():

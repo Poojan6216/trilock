@@ -18,6 +18,7 @@ from pathlib import Path
 from mcp import Client
 
 from trilock.config import StdioUpstream, TrilockConfig
+from trilock.proxy.guard import Guard
 from trilock.proxy.router import Router
 from trilock.proxy.server import build_proxy
 from trilock.proxy.upstream import UpstreamPool, open_pool
@@ -41,13 +42,27 @@ def two_server_config(**env: str) -> TrilockConfig:
 
 
 @asynccontextmanager
-async def proxied(config: TrilockConfig | None = None) -> AsyncIterator[tuple[Client, Router]]:
+async def proxied(
+    config: TrilockConfig | None = None,
+) -> AsyncIterator[tuple[Client, Router]]:
     """A client connected in-process to a Trilock proxy over the given upstreams."""
     async with (
-        build_proxy(config if config is not None else two_server_config()) as (server, router),
+        build_proxy(config if config is not None else two_server_config()) as (server, router, _),
         Client(server) as client,
     ):
         yield client, router
+
+
+@asynccontextmanager
+async def guarded(
+    config: TrilockConfig,
+) -> AsyncIterator[tuple[Client, Router, Guard]]:
+    """Like `proxied`, but also hands back the guard so tests can read session state."""
+    async with (
+        build_proxy(config) as (server, router, guard),
+        Client(server) as client,
+    ):
+        yield client, router, guard
 
 
 @asynccontextmanager

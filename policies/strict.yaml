@@ -1,0 +1,83 @@
+# Trilock strict policy: session-level Rule of Two.
+#
+# The maximum-security configuration. Attribution is ignored entirely, so no
+# amount of paraphrasing, re-encoding or laundering through a benign tool can
+# make an argument look clean. The cost is utility, and RESULTS.md measures
+# exactly how much.
+#
+# Classification vocabulary:
+#   reads:       trusted | untrusted   -- how much to trust content this tool returns
+#   sensitivity: public  | sensitive   -- how much damage disclosing it would do
+#   effect:      none    | external    -- whether calling it acts on the world
+#   scope:       glob(s)               -- where an external action may act
+version: 1
+mode: strict
+
+tools:
+  # -- mail: the classic trifecta. Reads attacker-controlled text, holds
+  #    private threads, and can send.
+  "mail.search": { reads: untrusted, sensitivity: sensitive }
+  "mail.read": { reads: untrusted, sensitivity: sensitive }
+  "mail.drafts": { reads: trusted, sensitivity: sensitive }
+  "mail.send": { effect: external, describe: "sends email to an external recipient" }
+
+  # -- the web: untrusted by definition, and public.
+  "web.fetch": { reads: untrusted, sensitivity: public }
+  "web.search": { reads: untrusted, sensitivity: public }
+  "http.post": { effect: external, describe: "posts data to an external host" }
+
+  # -- local files: trusted content, sensitive, and writes act on the world.
+  "fs.read": { reads: trusted, sensitivity: sensitive }
+  "fs.list": { reads: trusted, sensitivity: public }
+  "fs.write": { effect: external, scope: "./workspace/**" }
+
+  # -- notes / docs: local content that is nonetheless attacker-reachable if
+  #    anything else can write to it.
+  "notes.read_note": { reads: untrusted, sensitivity: sensitive }
+  "notes.list_notes": { reads: trusted, sensitivity: public }
+  "notes.write_note": { effect: external, scope: "./workspace/**" }
+
+  # -- version control: reading is trusted-ish, pushing leaves the machine.
+  "git.log": { reads: trusted, sensitivity: public }
+  "git.diff": { reads: trusted, sensitivity: sensitive }
+  "git.push": { effect: external }
+
+unclassified: deny
+
+rules:
+  # Order matters: first match wins, and there is an implicit terminal deny.
+
+  - id: scope_violation
+    when: { scope_violation: true }
+    then: deny
+    because: "an external action was asked to act outside the scope its policy declares"
+
+  # strict mode never consults argument attribution, so there is no
+  # `args_tainted_by` rule here: paraphrase defeats attribution, and this mode
+  # exists precisely so that it cannot matter. The session either holds the
+  # third leg or it does not.
+  - id: rule_of_two
+    when: { trifecta_legs: 3 }
+    then: deny
+    because: >-
+      this session holds all three legs of the lethal trifecta. In strict mode
+      the third leg is refused outright rather than put to a human, because a
+      human asked often enough eventually says yes.
+
+  - id: unclassified_tool
+    when: { unclassified: true }
+    then: deny
+    because: "no policy entry classifies this tool, so what it does is unknown"
+
+  - id: benign
+    when: { trifecta_legs: 0 }
+    then: allow
+
+  - id: two_legs_is_safe
+    when: { trifecta_legs: 2 }
+    then: allow
+    because: "any two legs of the trifecta are safe; it is the third that is fatal"
+
+  - id: one_leg_is_safe
+    when: { trifecta_legs: 1 }
+    then: allow
