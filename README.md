@@ -60,7 +60,7 @@ that was malicious from the start, anything outside the MCP path, and two-leg
 
 ```bash
 git clone https://github.com/Poojan6216/trilock.git && cd trilock && uv sync   # from source, today
-uv pip install mcp-trilock                                   # from PyPI, once published
+uv pip install mcp-trilock                                   # from PyPI (https://pypi.org/project/mcp-trilock/)
 cd your-project
 trilock init                          # wraps every server in .mcp.json behind Trilock, backs the original up byte for byte
 trilock check                         # validates config + policy, prints the resolved tool table
