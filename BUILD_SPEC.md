@@ -531,7 +531,7 @@ rules:
   Upstream dies mid-call; upstream returns 100MB; malformed JSON-RPC; deeply nested arguments; binary/image content blocks; concurrent calls in one session; two clients sharing one Trilock; stateless `2026-07-28` with no session id; a tool that returns another tool's schema; unicode in tool names; a policy referencing a tool that no upstream provides.
   **Verify:** each case has a test. Nothing crashes the proxy; every failure is logged and returns a valid MCP error.
 
-- [ ] **7.3 — Performance under load**
+- [x] **7.3 — Performance under load**
   100 concurrent sessions, sustained call rate. No unbounded memory growth (the 1.2 ledger cap must actually bind). Detector batching under concurrency.
   **Verify:** a soak test result committed to `bench/results/soak.json`, including RSS over time.
 
@@ -633,6 +633,7 @@ rules:
 [7.1] trilock init/uninstall (integrations/claude_code.py, generic.py): wraps every server in a client config behind Trilock, writes trilock.yaml, backs up the ORIGINAL BYTES (verified before anything is touched) and uninstall restores byte-for-byte from the digest-checked backup. Round-trip tests over 5 shapes: Claude Code .mcp.json, Claude Desktop, Cursor (// comments + trailing commas), VS Code 'servers', Zed 'context_servers' with command objects. Double-init and corrupted-backup refused; dotted server names refused before anything changes.
 [7.4] trilock check --suggest (policy/suggest.py): transparent word-list drafter (name verb + description nouns -> effect/reads/sensitivity), every line carries its reason, weak-signal lines flagged REVIEW, conservative defaults, never applied. VERIFIED against 3 real public MCP servers launched via npx/uvx (filesystem 14 tools, fetch 1, git 12): all 27 drafted sensibly, 7 flagged REVIEW; the draft loads as a valid policy. Saved as docs/examples/suggested-filesystem-fetch-git.yaml. Real-server evidence fed back into the verb lists (checkout/reset act; log/diff/status/branch read).
 [7.2] Chaos fixture server + 12 edge-case tests: upstream dies mid-call (FOUND+FIXED: the SDK's MCPError 'Connection closed' escaped the handler; now a tool error + reconnect request), 8 MB result with bounded fingerprint, 60-deep nested args/results, image content blocks untouched, 20 concurrent calls in one session (ledger seq 0..19), two clients sharing one Trilock, unicode tool name routes, a result shaped like another tool's schema changes neither policy nor listing (Hard Rule 3), policy naming an absent tool is harmless, slow call cancellable with session surviving, raw non-JSON and bad-params/unknown-method frames over stdio answered with JSON-RPC errors and the session continues, degraded stateless identity reports rather than enforcing.
+[7.3] Soak (bench/soak.py -> bench/results/soak.json): 100 concurrent sessions x 45 s in-process over the two fixture upstreams, dataflow policy, heuristics on: 3282 calls, 0 errors, 68 calls/s; ledger cap (50) BINDS (max_sources=50 across 100 ledgers); RSS 64 -> 144 MB, decelerating to +2.3 MB over the last 10 s as ledgers fill to cap — bounded on this run, with the caveat that 45 s is short. The 2.7 s p50 is the two single-pipe fixture subprocesses saturating under 100 clients, not the proxy (decide() is ~0.13 ms). Detector batching under concurrency: heuristics only (Prompt Guard off by default).
 ```
 
 ---

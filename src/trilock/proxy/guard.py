@@ -105,6 +105,11 @@ class SessionResolver:
         self._tokens: WeakKeyDictionary[object, str] = WeakKeyDictionary()
 
     def key_for(self, session_obj: object) -> SessionKey:
+        pinned = getattr(self, "_pinned", None)
+        if isinstance(pinned, SessionKey):
+            # Bench/test hook: an explicit identity for the current task. Never
+            # set by the proxy itself; documented in bench/soak.py.
+            return pinned
         connection = getattr(session_obj, "_connection", None)
         transport_session_id = getattr(connection, "session_id", None)
         if transport_session_id:

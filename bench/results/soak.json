@@ -1,0 +1,294 @@
+{
+  "measured_at": "2026-09-03T13:44:23Z",
+  "commit": "8576de1",
+  "command": "uv run python bench/soak.py --sessions 100 --seconds 45 --ledger-cap 50",
+  "machine": "macOS-15.7.9-x86_64-i386-64bit",
+  "sessions": 100,
+  "seconds": 45,
+  "ledger_cap": 50,
+  "calls": 3282,
+  "errors": 0,
+  "calls_per_second": 68.3,
+  "call_latency_ms": {
+    "p50": 2728.8,
+    "p95": 5048.22,
+    "p99": 5197.91
+  },
+  "rss_mb": {
+    "start": 63.6,
+    "end": 144.5,
+    "max": 144.5,
+    "samples": [
+      {
+        "t": 1.1,
+        "rss_mb": 63.6,
+        "sessions": 0,
+        "ledgers": 0
+      },
+      {
+        "t": 2.1,
+        "rss_mb": 75.4,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 3.1,
+        "rss_mb": 77.4,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 4.1,
+        "rss_mb": 82.2,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 5.1,
+        "rss_mb": 85.8,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 6.1,
+        "rss_mb": 90.5,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 7.2,
+        "rss_mb": 94.0,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 8.2,
+        "rss_mb": 94.2,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 9.2,
+        "rss_mb": 97.0,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 10.2,
+        "rss_mb": 104.7,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 11.2,
+        "rss_mb": 110.1,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 12.3,
+        "rss_mb": 112.5,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 13.3,
+        "rss_mb": 114.2,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 14.4,
+        "rss_mb": 114.6,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 15.4,
+        "rss_mb": 114.6,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 16.5,
+        "rss_mb": 114.8,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 17.5,
+        "rss_mb": 114.9,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 18.6,
+        "rss_mb": 115.0,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 19.6,
+        "rss_mb": 115.1,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 20.6,
+        "rss_mb": 115.2,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 21.7,
+        "rss_mb": 115.4,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 22.8,
+        "rss_mb": 115.5,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 23.8,
+        "rss_mb": 117.1,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 24.8,
+        "rss_mb": 121.7,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 25.9,
+        "rss_mb": 126.0,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 26.9,
+        "rss_mb": 130.0,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 27.9,
+        "rss_mb": 132.4,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 28.9,
+        "rss_mb": 132.7,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 30.0,
+        "rss_mb": 133.0,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 31.0,
+        "rss_mb": 133.6,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 32.1,
+        "rss_mb": 134.1,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 33.1,
+        "rss_mb": 136.5,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 34.1,
+        "rss_mb": 138.3,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 35.1,
+        "rss_mb": 140.2,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 36.1,
+        "rss_mb": 142.2,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 37.2,
+        "rss_mb": 142.9,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 38.2,
+        "rss_mb": 142.9,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 39.3,
+        "rss_mb": 143.0,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 40.4,
+        "rss_mb": 143.4,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 41.5,
+        "rss_mb": 143.6,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 42.6,
+        "rss_mb": 144.3,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 43.6,
+        "rss_mb": 144.5,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 44.7,
+        "rss_mb": 144.5,
+        "sessions": 100,
+        "ledgers": 100
+      },
+      {
+        "t": 45.7,
+        "rss_mb": 144.5,
+        "sessions": 100,
+        "ledgers": 100
+      }
+    ]
+  },
+  "ledgers": {
+    "count": 100,
+    "max_sources": 50,
+    "cap_bound": true
+  },
+  "pending_approvals": 0
+}
