@@ -45,6 +45,7 @@ CONFIGS: dict[str, Mode | None] = {
     "monitor": Mode.MONITOR,
     "strict": Mode.STRICT,
     "dataflow": Mode.DATAFLOW,
+    "integrity": Mode.DATAFLOW,  # dataflow + the untrusted_then_external rule
 }
 ATTACK = "important_instructions"
 BENCH_VERSION = "v1.2.2"
@@ -84,7 +85,11 @@ def _measure(
 def run_config(suite_name: str, config: str, ablation: Ablation, *, quiet: bool) -> dict[str, Any]:
     suite = get_suites(BENCH_VERSION)[suite_name]
     mode = CONFIGS[config]
-    policy = load_suite_policy(suite_name, mode, ablation) if mode is not None else None
+    policy = (
+        load_suite_policy(suite_name, mode, ablation, integrity=(config == "integrity"))
+        if mode is not None
+        else None
+    )
     pipeline = TrilockPipeline(suite=suite_name, policy=policy, ablation=ablation)
     benign, under_attack, attack_success = _measure(
         suite, pipeline, load_attack(ATTACK, suite, pipeline)
@@ -142,6 +147,20 @@ def run_config(suite_name: str, config: str, ablation: Ablation, *, quiet: bool)
 
 def _rate(results: dict[str, bool]) -> float:
     return round(sum(results.values()) / len(results), 4) if results else 0.0
+
+
+def _totals(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Task counts over one complete configuration present in `rows`."""
+    configs_present = [
+        c for c in CONFIGS if any(r["config"] == c and r["ablation"] == "full" for r in rows)
+    ]
+    anchor = configs_present[0] if configs_present else None
+    pick = [r for r in rows if r["config"] == anchor and r["ablation"] == "full"]
+    return {
+        "user_tasks": sum(r["user_tasks"] for r in pick),
+        "injection_tasks": sum(r["injection_tasks"] for r in pick),
+        "security_cases": sum(r["security_cases"] for r in pick),
+    }
 
 
 def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -441,6 +460,15 @@ def main() -> int:
     )
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument(
+        "--merge-latest",
+        action="store_true",
+        help=(
+            "after running, merge these rows into the latest full results file (replacing rows "
+            "for the same suite/config/ablation) and write a new timestamped file, so a single "
+            "configuration can be re-measured without repeating the whole benchmark"
+        ),
+    )
+    parser.add_argument(
         "--render-only",
         action="store_true",
         help="rebuild RESULTS.md from the latest committed JSON without re-running",
@@ -479,6 +507,18 @@ def main() -> int:
             ):
                 rows.append(run_config(suite, "dataflow", ablation, quiet=args.quiet))
 
+    if args.merge_latest:
+        base_path = latest("agentdojo_*.json")
+        if base_path is not None:
+            base = json.loads(base_path.read_text(encoding="utf-8"))
+            fresh = {(r["suite"], r["config"], r["ablation"]) for r in rows}
+            kept = [
+                r for r in base["rows"] if (r["suite"], r["config"], r["ablation"]) not in fresh
+            ]
+            rows = kept + rows
+            print(
+                f"merged {len(rows) - len(kept)} new rows into {len(kept)} kept rows from {base_path.name}"
+            )
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(started))
     results_file = RESULTS_DIR / f"agentdojo_{stamp}.json"
     payload: dict[str, Any] = {
@@ -535,7 +575,7 @@ def main() -> int:
     }
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     results_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    if args.all:
+    if args.all or args.merge_latest:
         RESULTS_MD.write_text(render_results_md(payload), encoding="utf-8")
         print(
             f"\nwrote {results_file.relative_to(REPO)} and RESULTS.md in {payload['duration_s']}s"

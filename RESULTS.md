@@ -1,7 +1,7 @@
 # RESULTS
 
-> **Generated file.** Produced by `uv run python bench/run_bench.py --all --ablations` at 2026-09-03T15:29:01Z on commit `e057d2b`.
-> Raw data: `bench/results/agentdojo_20260903T152901Z.json`. Do not edit; re-run the command.
+> **Generated file.** Produced by `uv run python bench/run_bench.py --mode integrity --merge-latest` at 2026-09-03T16:19:37Z on commit `5e2ca2a`.
+> Raw data: `bench/results/agentdojo_20260903T161937Z.json`. Do not edit; re-run the command.
 
 ## How the agent was driven
 
@@ -19,10 +19,11 @@ Two readings of the same runs. **Oracle** treats every ESCALATE as blocked (no h
 | `monitor` | 1.000 | 0.610 | **0.625** | 1.000 | 0.610 | **0.625** |
 | `strict` | 0.567 | 0.452 | **0.135** | 0.567 | 0.452 | **0.135** |
 | `dataflow` | 0.567 | 0.452 | **0.135** | 0.835 | 0.733 | **0.135** |
+| `integrity` | 0.464 | 0.467 | **0.050** | 0.835 | 0.814 | **0.050** |
 
 ### Reading the residual ASR
 
-The ASR that remains under `strict` and `dataflow` is **not** exfiltration slipping through. In every successful injection, the attacker's call was allowed by `fewer_than_three_legs`: the session had ingested untrusted content and the call was an external action, but nothing *sensitive* had been read - hotel reviews and web pages are public. Those are two-leg **integrity** attacks (make a reservation at the attacker's hotel, invite the attacker to the workspace, send a link), and the lethal-trifecta model permits two legs by design: it bounds what a hijacked agent can *disclose*, not everything it can *do*. Per suite: workspace ASR 0.000 (120/400 injection-phase calls allowed, all as `fewer_than_three_legs`); travel ASR 0.543 (200/240 injection-phase calls allowed, all as `fewer_than_three_legs`); banking ASR 0.000 (16/192 injection-phase calls allowed, all as `fewer_than_three_legs`); slack ASR 0.495 (187/273 injection-phase calls allowed, all as `fewer_than_three_legs`). `workspace`, where email and files are classified sensitive, is 0.000.
+The ASR that remains under `strict` and `dataflow` is **not** exfiltration slipping through. In every successful injection, the attacker's call was allowed by `fewer_than_three_legs`: the session had ingested untrusted content and the call was an external action, but nothing *sensitive* had been read - hotel reviews and web pages are public. Those are two-leg **integrity** attacks (make a reservation at the attacker's hotel, invite the attacker to the workspace, send a link), and the lethal-trifecta model permits two legs by design: it bounds what a hijacked agent can *disclose*, not everything it can *do*. Per suite: workspace ASR 0.000 (120/400 injection-phase calls allowed, all as `fewer_than_three_legs`); travel ASR 0.543 (200/240 injection-phase calls allowed, all as `fewer_than_three_legs`); banking ASR 0.000 (16/192 injection-phase calls allowed, all as `fewer_than_three_legs`); slack ASR 0.495 (187/273 injection-phase calls allowed, all as `fewer_than_three_legs`). `workspace`, where email and files are classified sensitive, is 0.000. The `integrity` configuration (dataflow plus `untrusted_then_external -> escalate`) measures ASR **0.050** at benign utility 0.464 (oracle) / 0.835 (attentive human): that is the price of closing the integrity class, and it is a policy choice, not a code change.
 
 ### Per suite
 
@@ -44,6 +45,10 @@ The ASR that remains under `strict` and `dataflow` is **not** exfiltration slipp
 | slack | `monitor` | 1.000 | 0.971 | 1.000 | 105 |
 | slack | `strict` | 0.476 | 0.476 | 0.495 | 105 |
 | slack | `dataflow` | 0.476 | 0.476 | 0.495 | 105 |
+| workspace | `integrity` | 0.450 | 0.450 | 0.000 | 560 |
+| travel | `integrity` | 0.700 | 0.700 | 0.000 | 140 |
+| banking | `integrity` | 0.438 | 0.438 | 0.000 | 144 |
+| slack | `integrity` | 0.286 | 0.286 | 0.448 | 105 |
 
 ## Ablation (dataflow mode, each component disabled in turn)
 
@@ -65,6 +70,7 @@ Each row disables one component of dataflow mode. What the table shows: **the tr
 | `monitor` (workspace) | 0.273 | 0.46 | 0.656 | 1660 |
 | `strict` (workspace) | 0.23 | 0.388 | 0.596 | 1660 |
 | `dataflow` (workspace) | 0.2 | 0.312 | 0.406 | 1660 |
+| `integrity` (workspace) | 0.221 | 0.37 | 0.499 | 1660 |
 
 Trilock adds zero LLM tokens: there is no model in the decision path. The marginal cost per protected call is CPU only.
 

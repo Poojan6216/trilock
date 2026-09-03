@@ -1,0 +1,18 @@
+# Dependabot: keep Actions fresh; leave the pinned ML runtime alone.
+#
+# torch is pinned to 2.2.2 and onnxruntime to <1.24 because they are the last
+# releases with macOS x86_64 wheels (see pyproject.toml). A version bump there
+# is not an upgrade, it is a platform drop, so those are ignored here and the
+# pins are revisited deliberately.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: { interval: "monthly" }
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule: { interval: "monthly" }
+    ignore:
+      - dependency-name: "torch"
+      - dependency-name: "transformers"
+      - dependency-name: "onnxruntime"
