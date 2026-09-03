@@ -58,9 +58,14 @@ that was malicious from the start, anything outside the MCP path, and two-leg
 
 ## Install
 
+Trilock needs **Python 3.12 or newer**. The first line below fetches one for you if
+your system Python is older; a plain `pip install` under Python 3.11 fails with
+"No matching distribution found".
+
 ```bash
-git clone https://github.com/Poojan6216/trilock.git && cd trilock && uv sync   # from source, today
-uv pip install mcp-trilock                                   # from PyPI (https://pypi.org/project/mcp-trilock/)
+uv tool install mcp-trilock                                  # from PyPI; uv brings its own Python 3.12
+pip install mcp-trilock                                      # or, if `python3 --version` is already >= 3.12
+git clone https://github.com/Poojan6216/trilock.git && cd trilock && uv sync   # from source
 cd your-project
 trilock init                          # wraps every server in .mcp.json behind Trilock, backs the original up byte for byte
 trilock check                         # validates config + policy, prints the resolved tool table
