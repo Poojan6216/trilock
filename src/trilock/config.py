@@ -81,6 +81,19 @@ class DetectorConfig(_Strict):
     model_dir: Path = Path(STATE_DIRNAME) / "models"
 
 
+class PinConfig(_Strict):
+    """Tool definition pinning (rug-pull detection)."""
+
+    enabled: bool = True
+    path: Path = Path(STATE_DIRNAME) / "pins.json"
+    strict: bool = False
+    """Withhold and refuse a tool whose definition changed, rather than warn.
+
+    Set from the policy's mode when a policy is loaded: `strict` mode implies
+    strict pinning.
+    """
+
+
 class LedgerConfig(_Strict):
     """Bounds on the per-session provenance ledger."""
 
@@ -99,6 +112,7 @@ class TrilockConfig(_Strict):
     audit: AuditConfig = Field(default_factory=AuditConfig)
     detectors: DetectorConfig = Field(default_factory=DetectorConfig)
     ledger: LedgerConfig = Field(default_factory=LedgerConfig)
+    pins: PinConfig = Field(default_factory=PinConfig)
     state_dir: Path = Path(STATE_DIRNAME)
     source_path: Path | None = None
     """Where this config was loaded from. Set by the loader, never by the file."""
@@ -162,5 +176,6 @@ def load_config(path: Path | None = None) -> TrilockConfig:
             "detectors": config.detectors.model_copy(
                 update={"model_dir": base / config.detectors.model_dir}
             ),
+            "pins": config.pins.model_copy(update={"path": base / config.pins.path}),
         }
     )

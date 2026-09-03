@@ -79,6 +79,13 @@ def serve(
 def check(
     config: ConfigOpt = None,
     log_level: LogLevelOpt = "WARNING",
+    repin: Annotated[
+        bool,
+        typer.Option(
+            "--repin",
+            help="Connect to every upstream and accept the tool definitions as they are now.",
+        ),
+    ] = False,
 ) -> None:
     """Validate configuration and policy, and print the resolved tool table."""
     log.configure(log_level)
@@ -94,6 +101,44 @@ def check(
         )
         typer.echo(f"  {name}  ({detail})")
     typer.echo(f"policy: {cfg.policy or '<none — proxy runs in passthrough>'}")
+    typer.echo(f"pins: {cfg.pins.path if cfg.pins.enabled else '<disabled>'}")
+    if cfg.servers:
+        raise typer.Exit(asyncio.run(_inspect_upstreams(cfg, repin=repin)))
+
+
+async def _inspect_upstreams(cfg: TrilockConfig, *, repin: bool) -> int:
+    """List every upstream's tools, reporting pin violations. Returns an exit code."""
+    from trilock.proxy.server import build_proxy
+
+    async with build_proxy(cfg) as (_server, router):
+        tools = await router.list_tools()
+        down: list[str] = []
+        for status in router.pool.statuses():
+            state = status["state"]
+            typer.echo(f"  {status['server']}: {state} ({status['protocol_version'] or '-'})")
+            if state != "ready":
+                down.append(status["server"])
+                typer.echo(f"      reason: {status['last_error']}", err=True)
+        typer.echo(f"tools: {len(tools.tools)}")
+        for tool in sorted(tools.tools, key=lambda t: t.name):
+            typer.echo(f"  {tool.name}")
+        pins = router.pins
+        if pins is None:
+            return 0
+        if repin:
+            for cleared in pins.repin():
+                typer.echo(f"re-pinned {cleared.key}")
+            pins.save()
+            return 0
+        if pins.violations:
+            typer.echo("", err=True)
+            for violation in pins.violations.values():
+                typer.echo(f"PIN VIOLATION: {violation.describe()}", err=True)
+            return 4
+        if down:
+            typer.echo(f"unavailable upstreams: {', '.join(down)}", err=True)
+            return 5
+        return 0
 
 
 @app.command()

@@ -36,6 +36,25 @@ HEALTH_INTERVAL: Final[float] = 30.0
 CONNECT_TIMEOUT: Final[float] = 30.0
 
 
+def describe_exception(exc: BaseException, _depth: int = 0) -> str:
+    """A one-line cause for `exc`, reaching inside exception groups.
+
+    anyio wraps a failed connect in a TaskGroup ExceptionGroup, so the naive
+    rendering is "ExceptionGroup: unhandled errors in a TaskGroup (1
+    sub-exception)" — which tells an operator nothing about the missing module
+    or refused connection that actually broke their upstream. `trilock check`
+    surfaces this string, so it has to name the real cause.
+    """
+    if isinstance(exc, BaseExceptionGroup) and exc.exceptions and _depth < 5:
+        inner = "; ".join(describe_exception(e, _depth + 1) for e in exc.exceptions[:3])
+        more = f" (+{len(exc.exceptions) - 3} more)" if len(exc.exceptions) > 3 else ""
+        return f"{inner}{more}"
+    rendered = f"{type(exc).__name__}: {exc}".strip().rstrip(":")
+    if exc.__cause__ is not None and _depth < 5:
+        return f"{rendered} <- {describe_exception(exc.__cause__, _depth + 1)}"
+    return rendered
+
+
 class UpstreamState(StrEnum):
     """Lifecycle of a single upstream connection."""
 
@@ -196,7 +215,7 @@ class Upstream:
 
     def _fail(self, exc: BaseException | None) -> None:
         self.state = UpstreamState.UNAVAILABLE
-        self.last_error = f"{type(exc).__name__}: {exc}" if exc is not None else "connection closed"
+        self.last_error = describe_exception(exc) if exc is not None else "connection closed"
         _log.warning("upstream unavailable", extra=self.status())
 
     async def _hold(self, client: Client) -> None:

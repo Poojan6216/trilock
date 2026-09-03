@@ -340,7 +340,7 @@ rules:
   `proxy/passthrough.py`. With an empty policy, the proxy is transparent. Write a differential test: run a scripted sequence of ~30 MCP operations directly against a fixture server, then the same sequence through Trilock, and assert the responses are equal modulo namespacing and `_meta` routing fields.
   **Verify:** the differential test passes for both protocol revisions.
 
-- [ ] **0.6 — Tool definition pinning (rug-pull detection)**
+- [x] **0.6 — Tool definition pinning (rug-pull detection)**
   On first connect, hash each tool's name + description + input schema. Store in `.trilock/pins.json`. On reconnect, a changed definition emits a loud warning and — in `strict` — refuses to expose that tool until re-pinned via `trilock check --repin`. This catches the tool-poisoning class where a server serves a benign description at review time and a malicious one later.
   **This is table stakes, not novelty** — `airlock-agent` ships it already (§3). Build it because the tool is incomplete without it, credit the prior art in the README, and do not present it as a contribution.
   **Verify:** test mutates a fixture server's tool description between runs and asserts the pin violation fires.
@@ -601,6 +601,7 @@ rules:
 [0.3] Supervised upstream pool (stdio + streamable HTTP), one task per upstream so connect/reconnect/teardown share a cancel scope. Exponential backoff with jitter, dead upstream isolated. Fixture servers negotiate 2026-07-28; liveness probe is tools/list, NOT ping — SEP-2577 removes ping in 2026-07-28 and using it reconnect-looped healthy servers (regression test added). Client-side response cache disabled so a stale tools/list cannot mask a rug-pull.
 [0.4] Router aggregates tools/prompts (namespaced <server>.<tool>, split on FIRST dot since SEP-986 allows dots in tool names) and routes resources by learned URI->owner table with deterministic probe fallback. Progress bridged via session.report_progress, NOT send_progress_notification — the token-based form silently drops progress on in-process and 2026-07-28 callers. Listings tolerate a dead upstream. Added docs_server fixture so resources/prompts/progress/cancellation are actually tested.
 [0.5] Differential passthrough test: 33 MCP ops run direct vs through a real 'trilock serve' subprocess, on BOTH 2025-11-25 and 2026-07-28. Found and fixed a real leak — the proxy forwarded the upstream's io.modelcontextprotocol/serverInfo stamp downstream, misdescribing the hop and disclosing upstream name/version. Only permitted difference left is the peer stamp naming trilock, which canonicalise() normalises to a marker while a separate test asserts it really says 'trilock' (no impersonation).
+[0.6] Tool definition pinning in proxy/pins.py (extra module beyond the spec's file list — cleaner than bloating router.py). Digest covers name+description+inputSchema PLUS title/outputSchema/annotations, a documented superset: annotations carry readOnlyHint/destructiveHint a reader may act on. strict mode both withholds from tools/list AND refuses the call — hiding alone is not enough for a client that listed before the change. 'trilock check --repin' accepts changes; check exits 4 on violation, 5 on a dead upstream. Prior art: airlock-agent ships this already; credited, not claimed.
 ```
 
 ---

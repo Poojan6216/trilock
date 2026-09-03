@@ -27,6 +27,7 @@ import anyio
 import mcp_types as types
 
 from trilock import log
+from trilock.proxy.pins import PinStore
 from trilock.proxy.upstream import Upstream, UpstreamPool
 
 _log = log.get("proxy.router")
@@ -43,6 +44,10 @@ _T = TypeVar("_T")
 
 class RouteError(ValueError):
     """A downstream name does not resolve to a known upstream tool or prompt."""
+
+
+class PinViolationError(RouteError):
+    """A tool's definition changed since it was pinned, and strict mode refuses it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,8 +132,9 @@ def strip_reserved_meta(meta: types.RequestParamsMeta | None) -> types.RequestPa
 class Router:
     """Aggregates and routes between the downstream server and the upstream pool."""
 
-    def __init__(self, pool: UpstreamPool) -> None:
+    def __init__(self, pool: UpstreamPool, pins: PinStore | None = None) -> None:
         self.pool = pool
+        self.pins = pins
         self._resource_owner: dict[str, str] = {}
         """URI -> upstream name, learned from resources/list."""
 
@@ -199,7 +205,11 @@ class Router:
                 result = await upstream.client().list_tools(cursor=cursor)
                 return result.tools, result.next_cursor
 
-            return [_rename(tool, upstream.name) for tool in await self._paginate(page)]
+            tools = list(await self._paginate(page))
+            if self.pins is not None:
+                tools = self.pins.filter(upstream.name, tools)
+                self.pins.save()
+            return [_rename(tool, upstream.name) for tool in tools]
 
         return types.ListToolsResult(tools=await self._gather(fetch, "tools/list"))
 
@@ -218,6 +228,7 @@ class Router:
     ) -> types.CallToolResult:
         """Execute a namespaced tool on its upstream."""
         upstream, name = self.resolve(qualified)
+        self._enforce_pin(upstream.name, name)
         return strip_hop_meta(
             await upstream.client().call_tool(
                 name,
@@ -226,6 +237,19 @@ class Router:
                 meta=strip_reserved_meta(meta),
             )
         )
+
+    def _enforce_pin(self, server: str, tool: str) -> None:
+        """Refuse a tool with an outstanding pin violation, in strict mode.
+
+        Withholding it from `tools/list` is not enough on its own: a client that
+        listed before the change — or that was told the name by anything else —
+        can still call it. The check has to be on the call.
+        """
+        if self.pins is None or not self.pins.strict:
+            return
+        violation = self.pins.violations.get(f"{server}/{tool}")
+        if violation is not None:
+            raise PinViolationError(violation.describe())
 
     # -- prompts ---------------------------------------------------------
 

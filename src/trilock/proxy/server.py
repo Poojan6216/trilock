@@ -23,6 +23,7 @@ from mcp_types import INVALID_PARAMS
 
 from trilock import __version__, log
 from trilock.config import TrilockConfig
+from trilock.proxy.pins import PinStore
 from trilock.proxy.router import RouteError, Router
 from trilock.proxy.upstream import UpstreamUnavailableError, open_pool
 
@@ -151,8 +152,11 @@ def initialization_options(server: Server[None]) -> InitializationOptions:
 @asynccontextmanager
 async def build_proxy(config: TrilockConfig) -> AsyncIterator[tuple[Server[None], Router]]:
     """Open the upstream pool and build the downstream server over it."""
+    pins = (
+        PinStore.load(config.pins.path, strict=config.pins.strict) if config.pins.enabled else None
+    )
     async with open_pool(config) as pool:
-        router = Router(pool)
+        router = Router(pool, pins)
         _log.info("proxy ready", extra={"upstreams": pool.statuses()})
         yield build_server(router), router
 
