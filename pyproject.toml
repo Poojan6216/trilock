@@ -1,0 +1,119 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-trilock"
+version = "0.1.0"
+description = "A drop-in MCP proxy that makes the lethal trifecta structurally impossible."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Trilock contributors" }]
+keywords = ["mcp", "security", "prompt-injection", "agent", "taint-tracking"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+]
+dependencies = [
+  "mcp>=2.1.1",
+  "pydantic>=2.9",
+  "pyyaml>=6.0.2",
+  "typer>=0.15",
+  "starlette>=0.41",
+  "anyio>=4.6",
+  "python-ulid>=3.0",
+]
+
+[project.optional-dependencies]
+detect = ["onnxruntime>=1.20", "tokenizers>=0.21", "huggingface-hub>=0.27"]
+bench = ["agentdojo>=0.1.20", "matplotlib>=3.9", "numpy>=2.0"]
+perplexity = ["torch>=2.4", "transformers>=4.44"]
+
+[project.scripts]
+trilock = "trilock.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/trilock/mcp-trilock"
+Source = "https://github.com/trilock/mcp-trilock"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pytest-cov>=6.0",
+  "hypothesis>=6.112",
+  "mypy>=1.13",
+  "ruff>=0.8",
+  "types-pyyaml>=6.0.12",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/trilock"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"policies" = "trilock/_policies"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests", "bench"]
+
+[tool.ruff.lint]
+select = [
+  "E", "F", "W",      # pycodestyle, pyflakes
+  "I",                # isort
+  "N",                # pep8-naming
+  "UP",               # pyupgrade
+  "B",                # bugbear
+  "C4",               # comprehensions
+  "SIM",              # simplify
+  "RUF",              # ruff-specific
+  "ASYNC",            # async correctness
+  "S",                # bandit
+  "TID",              # tidy imports
+  "PTH",              # pathlib
+]
+ignore = [
+  "S101",   # assert: used deliberately in tests and invariants
+  "S603",   # subprocess call: we spawn stdio MCP servers by design
+  "S607",   # partial executable path: config-supplied commands
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B011"]
+"bench/**" = ["S"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["trilock"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+disallow_any_explicit = false
+show_error_codes = true
+files = ["src/trilock"]
+
+[[tool.mypy.overrides]]
+module = ["onnxruntime.*", "tokenizers.*", "agentdojo.*", "transformers.*", "torch.*", "matplotlib.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+filterwarnings = ["error::DeprecationWarning:trilock.*"]
+markers = [
+  "slow: long-running tests (soak, benchmark)",
+  "needs_model: requires a downloaded ONNX detector model",
+  "needs_network: requires network access",
+]
+
+[tool.coverage.run]
+source = ["src/trilock"]
+branch = true
