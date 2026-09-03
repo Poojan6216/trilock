@@ -34,6 +34,13 @@ Provenance that outlives the session, and the integrity policy.
   (their names are written by other workspace members, and that is where one
   injection vector lives). Headline ASR 0.123 -> 0.117, integrity 0.033 -> 0.022;
   slack utility falls 0.476 -> 0.333 (oracle) and the tables say so.
+### Security
+- The `perplexity` extra locked torch 2.2.2 and transformers 4.49 for an Intel-mac
+  wheel, and the lockfile carried their 24 published CVEs (torch CVE-2025-32434 among
+  them). The extra now requires torch >= 2.9.1 and transformers >= 5.10 and excludes
+  macOS x86_64 instead of pinning it; the proxy, detector and benchmark never
+  depended on either package.
+
 - The red-team harness now models a persistent store honestly: a denied write
   leaves nothing to read back, and an exfil body must come from what the model
   actually read. The first version let a denied write be read back, which

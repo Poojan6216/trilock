@@ -128,8 +128,14 @@ the attacker cannot rewrite.
 *Every figure above regenerates with:*
 
 ```
+uv sync --extra perplexity   # torch >= 2.9.1 and transformers >= 5.10; see the note below
 uv run python bench/perplexity_experiment.py
 uv run python bench/detector_latency.py --model-dir .trilock/models/promptguard-22m
 uv run pytest tests/unit/test_heuristics.py
 uv run python -m bench.adaptive.attacker
 ```
+
+*The `perplexity` extra locks only patched releases, and neither ships a macOS x86_64
+wheel any more, so it excludes Intel macs. The committed `bench/results/perplexity_*.json`
+was produced on one, with an unlocked `uv pip install "torch==2.2.2" "transformers<4.50"`;
+reproduce it there the same way, knowing those versions carry published CVEs.*

@@ -32,8 +32,18 @@ dependencies = [
 [project.optional-dependencies]
 detect = ["onnxruntime>=1.20,<1.24", "tokenizers>=0.21", "huggingface-hub>=0.27"]
 bench = ["agentdojo>=0.1.20", "matplotlib>=3.9", "numpy>=2.0"]
-# torch 2.2.2 is the last release with a macOS x86_64 wheel; newer only ship arm64.
-perplexity = ["torch>=2.2,<2.3", "transformers>=4.44,<4.50", "matplotlib>=3.9"]
+# The GPT-2 perplexity experiment (a published negative result; never on the request
+# path). Only patched releases are locked: torch < 2.6 carries CVE-2025-32434 and
+# transformers < 5.10 a run of deserialisation CVEs. Neither ships a macOS x86_64
+# wheel any more, so the extra excludes Intel macs rather than pin them to a
+# vulnerable version; reproducing there is a manual, unlocked install
+# (`uv pip install "torch==2.2.2" "transformers<4.50"`), which is how the
+# committed bench/results/perplexity_*.json was produced.
+perplexity = [
+  "torch>=2.9.1; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+  "transformers>=5.10; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+  "matplotlib>=3.9",
+]
 
 [project.scripts]
 trilock = "trilock.cli:main"
