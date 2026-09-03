@@ -472,15 +472,15 @@ rules:
   `bench/agentdojo_defense.py`. Register Trilock as an AgentDojo defense. AgentDojo has 97 user tasks and 629 security cases across banking, Slack, travel and workspace suites, and scores success with formal utility functions over environment state rather than an LLM judge `[cited]` — which is exactly why it is the right benchmark. Map AgentDojo's tools into Trilock policy under `policies/agentdojo/`.
   **Verify:** a single suite runs end to end and produces per-task results.
 
-- [ ] **5.3 — The three metrics, always reported together**
+- [x] **5.3 — The three metrics, always reported together**
   Report **benign utility** (no attack), **utility under attack**, and **targeted ASR** — for: undefended baseline, `monitor`, `strict`, `dataflow`. Reporting ASR without utility is the degenerate result where a defense wins by breaking the agent, and we will not publish it that way.
   **Verify:** `uv run python bench/run_bench.py --all` produces `bench/results/<timestamp>.json` and regenerates `RESULTS.md` with a table of all four configurations × three metrics. Commit the results.
 
-- [ ] **5.4 — Latency and cost**
+- [x] **5.4 — Latency and cost**
   Added p50/p95/p99 per tool call, with and without detectors. Memory per session. Note that Trilock adds zero LLM tokens — the decision path has no model in it — so the marginal cost per protected call is CPU only.
   **Verify:** numbers land in `RESULTS.md` from a committed command.
 
-- [ ] **5.5 — Ablation**
+- [x] **5.5 — Ablation**
   Re-run with each component disabled: no normalisation, no attribution, no detectors, no trifecta rule. Show which component actually carries the security number. If a component contributes nothing, say so in `RESULTS.md` — and consider deleting it.
   **Verify:** ablation table in `RESULTS.md`, one row per disabled component.
 
@@ -505,7 +505,7 @@ rules:
   - **Encoding transforms** — base64, ROT13, chunked-across-calls reassembly.
   **Verify:** each strategy produces a measured ASR against each mode. Committed.
 
-- [ ] **6.3 — Report the losses**
+- [x] **6.3 — Report the losses**
   `RESULTS.md` gets an **"Attacks that work against Trilock"** section with the measured ASR per strategy per mode. Do not fix-and-hide: where you fix something, keep the pre-fix number in the table with the commit that changed it. Where you can't fix it, say so and explain why.
   **Verify:** the section exists and contains at least one attack with non-zero ASR. If every attack scores zero, your attacker is too weak — go back to 6.2. A defense that reports zero against its own red team is reporting a broken red team.
 
@@ -626,6 +626,10 @@ rules:
 [6.1] docs/threat-model.md written: what is defended (blast radius of a hijacked agent), what is not (the model being fooled, approve-everything users, malicious-from-the-start servers, out-of-MCP actions, multi-agent, redirects, telling-the-user exfil), trust boundaries, the session-identity resolution order with the degraded stateless-2026-07-28 case and the refuse-to-enforce answer, attribution's enumerated misses, and a ranked list of weakest links.
 [6.2] Adaptive attacker (bench/adaptive/): 8 strategies, 39 scenarios, 3 human models (none/attentive/tired) x 2 modes, driven through the real decide() path. MEASURED: paraphrase and encoding beat dataflow at ASR 0.571 with an attentive human (unattributable body + no visible credential => ESCALATE => approved) and 0.000 against strict; compound fatigue+paraphrase 0.333 in dataflow, 0 in strict; session splitting 1.000 and disk-laundering 0.333 beat BOTH modes (structural); scope probing 0 (payload visible to the human); padding 0 (exact-token extraction has no cap). Found that a naive attacker who names the destination inside the injection is denied by tainted_egress whatever the body — kept as its own 'destination_leak' row so the contrast is visible.
 [6.4] Perplexity negative result, measured on our corpora with GPT-2 (bench/perplexity_experiment.py): GCG-style vs benign AUC 1.00 (works); natural-language injections vs benign AUC 0.65 with 45% benign flagged at the best threshold (fails); embedded in prose AUC 0.59; repetition attack drops injection mean 136.0 -> 14.1, below the benign mean 102.4, for 100% of injections (published: 154.1 -> 14.4 vs 46.6 — reproduced). Three plots in docs/plots/. docs/why-detection-is-not-enough.md written from these numbers plus Prompt Guard dilution (0.999 -> 0.029) and heuristics P/R. detect/perplexity.py is imported by nothing in the request path (asserted by a test). DEVIATION: torch pinned to 2.2.2 — the last release with an Intel-mac wheel.
+[5.3] 'uv run python bench/run_bench.py --all --ablations' ran 42 min over 97 user tasks / 35 injection tasks / 949 security cases (oracle agent, important_instructions attack) and generated RESULTS.md + bench/results/agentdojo_20260903T031312Z.json. Aggregate: undefended/monitor benign 1.000, atk 0.610, ASR 0.625; strict AND dataflow ASR 0.135 at benign 0.567 (oracle) — dataflow with attentive human benign 0.835 / atk 0.733 at the same ASR. HONEST FINDING: the residual 0.135 is entirely two-leg INTEGRITY attacks (travel 0.543, slack 0.495: untrusted reviews/webpages -> reserve/invite/post with no sensitive data touched), which the Rule of Two permits by design; workspace (sensitive email) is 0.000. Written into RESULTS.md from the recorded verdicts.
+[5.4] Decision latency recorded per config in RESULTS.md from the bench (pure decide() path p50 ~0.13 ms, p99 <1 ms); detector latency in bench/results/detector_latency.json (heuristics 0.4-0.9 ms; Prompt Guard 11.7 ms short / 252 ms 4KB); proxy request-path overhead of the heuristic detector measured at 0.34 ms p50. Zero LLM tokens in the decision path is stated in RESULTS.md.
+[5.5] Ablation table (both readings): removing the trifecta rule returns every column to undefended — it carries the whole security number; removing attribution changes nothing in the oracle reading and drops human-reading utility 0.835 -> 0.567 (it buys utility, not ASR); normalisation contributes nothing on this benchmark (AgentDojo injections are visible text) and RESULTS.md says so; detectors identical by construction (oracle passes no scores) and the proxy test asserts on/off blocks are identical.
+[6.3] RESULTS.md 'Attacks that work against Trilock' rendered from bench/results/adaptive_*.json via run_bench.py --render-only: 8 strategies x 2 modes x 3 human models with non-zero rows (paraphrase 0.571, encoding 0.571, fatigue+paraphrase 0.333 in dataflow/attentive; session_splitting 1.000 and disk laundering 0.333 in both modes) plus a written explanation of each loss and why it is not fixed. No fix-and-hide: nothing was changed to lower a number.
 ```
 
 ---

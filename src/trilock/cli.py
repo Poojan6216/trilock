@@ -199,6 +199,86 @@ async def _inspect_upstreams(cfg: TrilockConfig, policy: Policy | None, *, repin
 
 
 @app.command()
+def init(
+    client_config: Annotated[
+        Path | None,
+        typer.Argument(
+            help=(
+                "An MCP client config (.mcp.json, claude_desktop_config.json, "
+                ".cursor/mcp.json ...). Auto-discovered if omitted."
+            )
+        ),
+    ] = None,
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Where to write trilock.yaml.")
+    ] = Path("trilock.yaml"),
+    policy: Annotated[
+        Path | None, typer.Option("--policy", help="Policy file to reference from trilock.yaml.")
+    ] = None,
+    print_only: Annotated[
+        bool, typer.Option("--print", help="Print a client snippet instead of rewriting a config.")
+    ] = False,
+) -> None:
+    """Wrap every server in an MCP client config behind Trilock.
+
+    Reversible with `trilock uninstall`: the original config is backed up byte
+    for byte before anything is changed.
+    """
+    log.configure("WARNING")
+    from trilock.integrations import claude_code, generic
+
+    if print_only:
+        typer.echo(generic.client_snippet(output.resolve()), nl=False)
+        return
+    target = client_config
+    if target is None:
+        found = claude_code.discover_client_configs()
+        if not found:
+            typer.echo("trilock: no MCP client config found; pass its path explicitly", err=True)
+            raise typer.Exit(2)
+        target = found[0]
+        typer.echo(f"using {target}")
+    state_dir = output.resolve().parent / ".trilock"
+    try:
+        manifest = claude_code.init(
+            target.resolve(),
+            trilock_config_path=output.resolve(),
+            state_dir=state_dir,
+            policy_path=policy.resolve() if policy else None,
+        )
+    except claude_code.IntegrationError as exc:
+        typer.echo(f"trilock: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"wrapped {len(manifest['wrapped'])} server(s): {', '.join(manifest['wrapped'])}")
+    typer.echo(f"backup:  {manifest['backup']}")
+    typer.echo(f"config:  {manifest['trilock_config']}")
+    typer.echo("undo:    trilock uninstall")
+
+
+@app.command()
+def uninstall(
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="The trilock.yaml written by init.")
+    ] = Path("trilock.yaml"),
+    remove_config: Annotated[
+        bool, typer.Option("--remove-config", help="Also delete trilock.yaml.")
+    ] = False,
+) -> None:
+    """Restore the client config that `trilock init` replaced, byte for byte."""
+    log.configure("WARNING")
+    from trilock.integrations import claude_code
+
+    try:
+        manifest = claude_code.uninstall(
+            output.resolve().parent / ".trilock", remove_trilock_config=remove_config
+        )
+    except claude_code.IntegrationError as exc:
+        typer.echo(f"trilock: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"restored {manifest['client_config']} from {manifest['backup']}")
+
+
+@app.command()
 def approve(
     approval_id: Annotated[str, typer.Argument(help="The id printed in the tool error.")],
     config: ConfigOpt = None,
