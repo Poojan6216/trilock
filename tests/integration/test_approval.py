@@ -410,3 +410,77 @@ async def test_very_long_arguments_are_truncated(tmp_path: Path) -> None:
     prompt = human.prompts[0]
     assert len(prompt) < 10_000
     assert "truncated" in prompt
+
+
+# -- 3.1/3.2 on the protocol Claude Code actually speaks today (2025-11-25) ----
+#
+# On a handshake-era session there is no `input_required` result; the approval
+# must be a standalone `elicitation/create` request. In-process dispatch masks
+# protocol eras, so these run `trilock serve` as a real subprocess and force
+# the client into legacy mode - which is what Claude Code 2.1 negotiates.
+
+
+@asynccontextmanager
+async def _legacy_session(
+    tmp_path: Path, human: Human | None
+) -> AsyncIterator[tuple[Client, Path]]:
+    import sys
+
+    import yaml
+    from mcp import StdioServerParameters
+
+    config, log_path = _config(tmp_path)
+    doc = {
+        "version": 1,
+        "policy": str(config.policy),
+        "audit": {"enabled": False},
+        "servers": {
+            name: {
+                "transport": "stdio",
+                "command": up.command,
+                "args": list(up.args),
+                "env": dict(up.env),
+            }
+            for name, up in config.servers.items()
+        },
+    }
+    cfg_path = tmp_path / "trilock.yaml"
+    cfg_path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "trilock.cli", "serve", "--config", str(cfg_path), "--log-level", "ERROR"],
+        cwd=str(Path(__file__).resolve().parents[2]),
+    )
+    async with Client(params, mode="legacy", elicitation_callback=human, cache=None) as client:
+        assert client.protocol_version == "2025-11-25"
+        yield client, log_path
+
+
+async def test_legacy_protocol_approve_runs_exactly_once(tmp_path: Path) -> None:
+    human = Human(approve=True)
+    async with _legacy_session(tmp_path, human) as (client, log_path):
+        await client.call_tool("mail.search", {"query": ""})
+        result = await client.call_tool("mail.send", SEND)
+        assert not result.is_error, "".join(c.text for c in result.content if c.type == "text")
+    assert len(human.prompts) == 1 and "attacker@evil.tld" in human.prompts[0]
+    assert len(journal.calls_to(log_path, "send")) == 1
+
+
+async def test_legacy_protocol_decline_never_reaches_the_upstream(tmp_path: Path) -> None:
+    human = Human(approve=False)
+    async with _legacy_session(tmp_path, human) as (client, log_path):
+        await client.call_tool("mail.search", {"query": ""})
+        result = await client.call_tool("mail.send", SEND)
+        assert result.is_error
+        assert "declined" in "".join(c.text for c in result.content if c.type == "text")
+    assert len(human.prompts) == 1
+    assert journal.calls_to(log_path, "send") == []
+
+
+async def test_legacy_protocol_without_elicitation_degrades_to_deny(tmp_path: Path) -> None:
+    async with _legacy_session(tmp_path, None) as (client, log_path):
+        await client.call_tool("mail.search", {"query": ""})
+        result = await client.call_tool("mail.send", SEND)
+        assert result.is_error
+        assert "trilock approve" in "".join(c.text for c in result.content if c.type == "text")
+    assert journal.calls_to(log_path, "send") == []

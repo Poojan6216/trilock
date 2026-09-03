@@ -52,6 +52,13 @@ with each task's verification committed alongside it.
 - Soak test (100 concurrent sessions), chaos fixture with twelve edge cases, CI
   with a nightly ASR regression gate.
 
+### Fixed (before release)
+- Approval prompts on handshake-era sessions (`2025-11-25`, which Claude Code 2.1
+  negotiates): an `ESCALATE` returned the `2026-07-28` `input_required` shape,
+  which the SDK rejected, so the human was never asked (it failed closed). Such
+  sessions now receive a standalone `elicitation/create` request; verified over a
+  real stdio transport for approve, decline and no-elicitation clients.
+
 ### Known limitations
 - See README "Known limitations" and `docs/threat-model.md`. In particular:
   session identity under stateless HTTP is degraded and enforcement is refused

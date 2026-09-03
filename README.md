@@ -64,6 +64,13 @@ trilock check --suggest > policy.yaml # drafts a classification for every tool y
 trilock uninstall                     # restores your original client config exactly
 ```
 
+**Verified with Claude Code 2.1.246**: `trilock init` rewrites the project's `.mcp.json`,
+`claude mcp list` reports the wrapped server `✔ Connected`, and because Claude Code
+negotiates MCP `2025-11-25` and advertises `elicitation`, an `ESCALATE` reaches you as
+an in-app approval prompt via `elicitation/create` (on `2026-07-28` clients it is the
+native `input_required` result instead). A project-scoped server needs Claude Code's
+one-time trust confirmation the first time you open the project.
+
 Trilock reads `./trilock.yaml` (then `$XDG_CONFIG_HOME/trilock/config.yaml`),
 ships policies in [`policies/`](policies/) (`strict`, `dataflow`, `monitor`),
 and serves both MCP `2026-07-28` and `2025-11-25`. With no policy configured it

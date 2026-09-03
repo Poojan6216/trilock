@@ -24,6 +24,7 @@ from mcp.server.lowlevel import Server
 from mcp.server.request_state import RequestStateBoundary, RequestStateSecurity
 from mcp.shared.exceptions import MCPError
 from mcp_types import INVALID_PARAMS
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from trilock import __version__, log
 from trilock.approval import (
@@ -91,6 +92,62 @@ def _scope_of(value: object) -> ApprovalScope:
         return ApprovalScope(str(value))
     except ValueError:
         return ApprovalScope.ONCE
+
+
+def _is_modern(ctx: Ctx) -> bool:
+    """Whether this session speaks a per-request-envelope revision (2026-07-28+).
+
+    Only modern sessions can carry an `input_required` result; handshake-era
+    sessions get the standalone `elicitation/create` request instead. Claude
+    Code 2.1 negotiates 2025-11-25, so this is the path it actually exercises.
+    """
+    return ctx.protocol_version in MODERN_PROTOCOL_VERSIONS
+
+
+async def _elicit_legacy(
+    ctx: Ctx,
+    guard: Guard,
+    call_ctx: CallContext,
+    decision: Decision,
+    params: types.CallToolRequestParams,
+) -> types.CallToolResult | None:
+    """The 2025-11-25 approval round trip: ask, wait, then execute or refuse.
+
+    Single round trip inside one request, so no nonce is needed - there is no
+    state handed to the client that could be replayed. Any failure to reach a
+    human is a refusal, never an allow (Hard Rule: ESCALATE never degrades to
+    ALLOW).
+    """
+    try:
+        answer = await ctx.session.elicit_form(
+            render_prompt(decision, params.name, params.arguments or {}),
+            approval_schema(offer_always=guard.offer_always(call_ctx)),
+            related_request_id=ctx.request_id,
+        )
+    except Exception as exc:  # NoBackChannelError, a client error, a timeout
+        _log.warning(
+            "elicitation could not be delivered; escalation degraded to deny",
+            extra={"tool": params.name, "error": describe_exception(exc)},
+        )
+        approval_id = guard.approvals.issue_offline(
+            call_ctx.session.key, params.name, params.arguments, decision
+        )
+        return _refusal(_undeliverable(decision, approval_id))
+    if answer.action != "accept" or not (answer.content or {}).get("approve"):
+        _log.info("human declined", extra={"tool": params.name, "action": answer.action})
+        return _refusal(_declined(decision))
+    scope = _scope_of((answer.content or {}).get("scope"))
+    guard.record_approval(call_ctx, scope)
+    _log.info(
+        "human approved",
+        extra={
+            "tool": params.name,
+            "scope": scope.value,
+            "rule_id": decision.rule_id,
+            "via": "elicitation/create",
+        },
+    )
+    return None
 
 
 def _client_can_elicit(ctx: Ctx) -> bool:
@@ -251,7 +308,7 @@ def build_server(router: Router, guard: Guard | None = None) -> Server[None]:
                 latency_ms=(time.perf_counter() - started) * 1000,
             )
             if decision.verdict is Verdict.ESCALATE:
-                held = _handle_escalation(ctx, guard, call_ctx, decision, params)
+                held = await _handle_escalation(ctx, guard, call_ctx, decision, params)
                 if held is not None:
                     return held
             elif decision.blocked:
@@ -321,7 +378,7 @@ def build_server(router: Router, guard: Guard | None = None) -> Server[None]:
     ) -> types.ReadResourceResult:
         return await router.read_resource(str(params.uri), meta=ctx.meta)
 
-    def _handle_escalation(
+    async def _handle_escalation(
         ctx: Ctx,
         guard: Guard,
         call_ctx: CallContext,
@@ -334,6 +391,11 @@ def build_server(router: Router, guard: Guard | None = None) -> Server[None]:
         because a human said yes.
         """
         answer = _answer(params)
+        if answer is None and _client_can_elicit(ctx) and not _is_modern(ctx):
+            # 2025-11-25 (Claude Code today): no input_required result exists.
+            # Ask the human with a standalone elicitation/create request, wait
+            # for the answer inside this call, then execute or refuse.
+            return await _elicit_legacy(ctx, guard, call_ctx, decision, params)
         if answer is None:
             if not _client_can_elicit(ctx):
                 # Task 3.2: a client that cannot ask a human gets a DENY that
