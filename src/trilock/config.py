@@ -47,8 +47,9 @@ class StdioUpstream(_Strict):
     args: tuple[str, ...] = ()
     env: dict[str, str] = Field(default_factory=dict)
     cwd: Path | None = None
-    inherit_env: bool = True
-    """Pass the proxy's environment to the child. Set false for a hermetic child."""
+    """Extra environment variables. The SDK merges these over a filtered
+    inherited environment (PATH, HOME and friends); there is no way to launch a
+    fully hermetic child through it, so no config knob pretends otherwise."""
 
 
 class HttpUpstream(_Strict):

@@ -85,7 +85,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S", "B011"]
+# ASYNC110: tests legitimately poll for a state change another task owns.
+"tests/**" = ["S", "B011", "ASYNC110"]
 "bench/**" = ["S"]
 
 [tool.ruff.lint.isort]

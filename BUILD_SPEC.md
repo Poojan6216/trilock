@@ -320,15 +320,15 @@ rules:
 
 **Goal:** an installable MCP proxy that is byte-faithfully invisible. No policy, no taint, no detection. This proves the plumbing before any security logic exists.
 
-- [ ] **0.1 — Project scaffold**
+- [x] **0.1 — Project scaffold**
   `uv init`, pyproject with the §5 decisions, ruff + mypy strict configured, Apache-2.0 LICENSE, pytest layout, pre-commit running ruff and mypy.
   **Verify:** `uv run ruff check`, `uv run mypy --strict src/`, `uv run pytest` all pass on an empty suite.
 
-- [ ] **0.2 — Structured logging and the CLI skeleton**
+- [x] **0.2 — Structured logging and the CLI skeleton**
   `cli.py` with `serve`, `check`, `replay`, `bench` subcommands (stubs beyond `serve`). Structured JSON logs to stderr — **never stdout**, which is the stdio MCP transport and will corrupt the protocol if you write to it.
   **Verify:** a test asserts `serve` writes nothing to stdout other than JSON-RPC frames.
 
-- [ ] **0.3 — Upstream client connections**
+- [x] **0.3 — Upstream client connections**
   `proxy/upstream.py`. Connect to N upstream MCP servers from config. Support **stdio** (subprocess) and **streamable HTTP**. Handle `2026-07-28` and `2025-11-25`. Reconnect with backoff. Never crash the proxy when one upstream dies — mark it unavailable and keep serving the rest.
   **Verify:** integration test spins up two trivial stdio MCP servers (write them in `tests/fixtures/servers/`) and asserts both connect and respond to `tools/list`.
 
@@ -596,6 +596,9 @@ rules:
 *Agent: append one line per completed task. Format: `[phase.task] what you did — any decisions or blockers`.*
 
 ```
+[0.1] Scaffolded uv/hatchling project, ruff+mypy --strict, pytest layout, Apache-2.0, pre-commit. Python pinned to 3.12.13 via uv (system python is 3.11).
+[0.2] CLI (serve/check/replay/bench) + JSON logs on stderr. Stdout protected twice: SDK stdio_server claims fd 1, StdoutGuard logs any surviving Python-level write. Subprocess test parses every stdout line as JSON-RPC.
+[0.3] Supervised upstream pool (stdio + streamable HTTP), one task per upstream so connect/reconnect/teardown share a cancel scope. Exponential backoff with jitter, dead upstream isolated. Fixture servers negotiate 2026-07-28; liveness probe is tools/list, NOT ping — SEP-2577 removes ping in 2026-07-28 and using it reconnect-looped healthy servers (regression test added). Client-side response cache disabled so a stale tools/list cannot mask a rug-pull.
 ```
 
 ---
